@@ -17,7 +17,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final TextEditingController _nameController = TextEditingController();
-  bool _isCheckingUpdate = false;
 
   @override
   void initState() {
@@ -29,26 +28,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
-  }
-
-  void _checkForUpdatesManually() async {
-    if (_isCheckingUpdate) return;
-    setState(() => _isCheckingUpdate = true);
-    HapticFeedback.lightImpact();
-    Fluttertoast.showToast(msg: 'กำลังตรวจสอบเวอร์ชันล่าสุดจาก GitHub...');
-
-    final release = await UpdateService.checkForUpdate();
-    if (mounted) {
-      setState(() => _isCheckingUpdate = false);
-      if (release != null && release.hasUpdate) {
-        UpdateDialog.show(context, release);
-      } else {
-        Fluttertoast.showToast(
-          msg: 'คุณกำลังใช้งานเวอร์ชันล่าสุดแล้ว (v${UpdateService.currentVersion})',
-          backgroundColor: AppColors.darkNav,
-        );
-      }
-    }
   }
 
   /// Comprehensive Profile Edit Modal (Edit Both Avatar & Nickname)
@@ -311,80 +290,274 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) {
+        bool isCheckingInModal = false;
+        String updateStatusMessage = '';
+
         return Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24)),
-              title: const Text(
-                'ข้อมูลระบบ & เวอร์ชัน',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildInfoRow('แอปพลิเคชัน', 'ยูซิงค์ (U-Sync)'),
-                  _buildInfoRow('เวอร์ชัน', '1.2.0 (Neo-Pastel Edition)'),
-                  _buildInfoRow('ระบบซิงค์เวลา', 'Firebase Realtime Database'),
-                  _buildInfoRow('ระบบล็อกหน้าจอ', 'Wakelock Plus (เปิดใช้งาน)'),
-                  _buildInfoRow('การคำนวณเวลา', 'Latency Compensation Math'),
-                  const SizedBox(height: 8),
-                  StatefulBuilder(
-                    builder: (context, setSoundState) {
-                      return SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text(
-                          'เสียงเตือนแชท & Reaction',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: StatefulBuilder(
+              builder: (context, setModalState) {
+                return AlertDialog(
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                  titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 0),
+                  contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 20),
+                  title: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.purplePastel.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.info_outline_rounded,
+                          color: AppColors.purpleDeep,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ข้อมูลระบบ & อัปเดต',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            Text(
+                              'ยูซิงค์ • GitHub Connected',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  content: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // App Version & GitHub Badge Card
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFEDE7F6), Color(0xFFF3E5F5)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: AppColors.purplePastel.withValues(alpha: 0.6),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.verified_rounded,
+                                      size: 16, color: AppColors.purpleDeep),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    'เวอร์ชันปัจจุบัน:',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.darkNav,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Text(
+                                      'v${UpdateService.currentVersion}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Row(
+                                children: [
+                                  Icon(Icons.code_rounded,
+                                      size: 14, color: AppColors.textSecondary),
+                                  SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'GitHub: ZXD44/U-Sync',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: AppColors.textSecondary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        subtitle: const Text(
-                          'เปิดเสียงเมื่อเพื่อนส่งข้อความหรือส่งอิโมจิ',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textSecondary,
+
+                        const SizedBox(height: 14),
+
+                        // System Architecture Details
+                        _buildInfoRow('ระบบซิงค์เวลา', 'Firebase Realtime (Offset Sync)'),
+                        _buildInfoRow('เครื่องเล่น', 'YouTube CDN Player (60fps)'),
+                        _buildInfoRow('การพักหน้าจอ', 'Wakelock Plus (เปิดทำงาน)'),
+                        _buildInfoRow('ระบบกู้คืนหัวห้อง', 'Auto Host Migration (Active)'),
+
+                        const SizedBox(height: 8),
+
+                        // Sound Notification Setting
+                        StatefulBuilder(
+                          builder: (context, setSoundState) {
+                            return SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: const Text(
+                                'เสียงเตือนแชท & Reaction',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                'มีเสียงเมื่อเพื่อนส่งข้อความหรือส่งสติกเกอร์',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              value: FavoritesService.soundEnabled,
+                              activeThumbColor: AppColors.purpleDeep,
+                              onChanged: (val) {
+                                setSoundState(() {
+                                  FavoritesService.setSoundEnabled(val);
+                                });
+                              },
+                            );
+                          },
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // GitHub Check Update Action Button inside Modal
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.darkNav,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: isCheckingInModal
+                              ? null
+                              : () async {
+                                  setModalState(() {
+                                    isCheckingInModal = true;
+                                    updateStatusMessage = 'กำลังเชื่อมต่อ GitHub API...';
+                                  });
+                                  HapticFeedback.lightImpact();
+
+                                  final release = await UpdateService.checkForUpdate();
+                                  
+                                  if (ctx.mounted) {
+                                    setModalState(() {
+                                      isCheckingInModal = false;
+                                    });
+
+                                    if (release != null && release.hasUpdate) {
+                                      Navigator.pop(ctx);
+                                      if (mounted) {
+                                        UpdateDialog.show(context, release);
+                                      }
+                                    } else {
+                                      setModalState(() {
+                                        updateStatusMessage =
+                                            '✓ คุณกำลังใช้งานเวอร์ชันล่าสุดแล้ว (v${UpdateService.currentVersion})';
+                                      });
+                                      Fluttertoast.showToast(
+                                        msg: 'คุณกำลังใช้งานเวอร์ชันล่าสุดแล้ว',
+                                        backgroundColor: AppColors.darkNav,
+                                      );
+                                    }
+                                  }
+                                },
+                          icon: isCheckingInModal
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.sync_rounded, size: 18),
+                          label: Text(
+                            isCheckingInModal
+                                ? 'กำลังตรวจสอบ...'
+                                : 'ตรวจสอบอัปเดตจาก GitHub',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        value: FavoritesService.soundEnabled,
-                        activeThumbColor: AppColors.darkNav,
-                        onChanged: (val) {
-                          setSoundState(() {
-                            FavoritesService.setSoundEnabled(val);
-                          });
-                        },
-                      );
-                    },
+
+                        if (updateStatusMessage.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            updateStatusMessage,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.purpleDeep,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'ระบบจะปรับเวลาวิดีโอให้ตรงกันโดยอัตโนมัติ และลบห้องทิ้งทันทีเมื่อไม่มีคนใช้งาน',
-                    style: TextStyle(
-                        fontSize: 11, color: AppColors.textMuted, height: 1.4),
-                  ),
-                ],
-              ),
-              actions: [
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.darkNav,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('ปิด',
-                      style: TextStyle(color: Colors.white)),
-                ),
-              ],
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text(
+                        'ปิดหน้าต่าง',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         );
@@ -459,32 +632,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: _showEditProfileModal,
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 34,
-                          backgroundColor: AppColors.purplePastel,
-                          child: Text(
-                            avatarEmoji,
-                            style: const TextStyle(fontSize: 32),
-                          ),
-                        ),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: AppColors.darkNav,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.edit_rounded,
-                                size: 12, color: Colors.white),
-                          ),
-                        ),
-                      ],
+                  CircleAvatar(
+                    radius: 34,
+                    backgroundColor: AppColors.purplePastel,
+                    child: Text(
+                      avatarEmoji,
+                      style: const TextStyle(fontSize: 32),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -496,26 +649,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           nickname,
                           style: const TextStyle(
                             fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                             color: AppColors.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
                         const Text(
-                          'แตะเพื่อแก้ไขชื่อและเปลี่ยนรูปอวตาร',
+                          'โปรไฟล์สมาชิก U-Sync',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12,
                             color: AppColors.textSecondary,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.edit_outlined,
-                        color: AppColors.purpleDeep, size: 20),
-                    tooltip: 'แก้ไขโปรไฟล์',
-                    onPressed: _showEditProfileModal,
                   ),
                 ],
               ),
@@ -661,20 +808,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       endIndent: 20,
                       color: Color(0xFFF0EDF6)),
                   _buildSettingTile(
-                    icon: Icons.system_update_rounded,
-                    title: 'ตรวจสอบการอัปเดตเวอร์ชันใหม่',
-                    subtitle: 'เวอร์ชันปัจจุบัน v${UpdateService.currentVersion} • ตรวจสอบจาก GitHub',
-                    onTap: _checkForUpdatesManually,
-                  ),
-                  const Divider(
-                      height: 1,
-                      indent: 60,
-                      endIndent: 20,
-                      color: Color(0xFFF0EDF6)),
-                  _buildSettingTile(
-                    icon: Icons.info_outline_rounded,
-                    title: 'การทำงานของระบบ & ข้อมูลแอป',
-                    subtitle: 'ยูซิงค์ v${UpdateService.currentVersion} • ระบบซิงค์เวลาและหน้าจอ',
+                    icon: Icons.hub_outlined,
+                    title: 'ข้อมูลระบบ & อัปเดตเวอร์ชัน',
+                    subtitle: 'ยูซิงค์ v${UpdateService.currentVersion} • ซิงค์กับ GitHub (ZXD44/U-Sync)',
                     onTap: _showSystemInfoModal,
                   ),
                 ],
