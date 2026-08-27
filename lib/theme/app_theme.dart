@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../services/theme_service.dart';
 
 class AppColors {
-  // Base Colors
+  // Base Constants (preserves const safety across all widgets)
   static const Color background = Color(0xFFF4F0FA);
   static const Color surface = Colors.white;
   static const Color surfaceElevated = Color(0xFFFFFFFF);
@@ -29,6 +30,13 @@ class AppColors {
 
   // Bottom Navigation
   static const Color darkNav = Color(0xFF191824);
+
+  // Dynamic Theme Helpers
+  static bool get isDark => ThemeService.isDarkMode;
+  static Color get cardBg => isDark ? const Color(0xFF1B1926) : Colors.white;
+  static Color get divider => isDark ? const Color(0xFF2B283D) : const Color(0xFFF0EDF6);
+  static Color get bg => isDark ? const Color(0xFF0F0E16) : const Color(0xFFF4F0FA);
+  static Color get currentNav => isDark ? const Color(0xFF1B1926) : const Color(0xFF191824);
 }
 
 class AppTheme {
@@ -36,88 +44,57 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: AppColors.background,
-      splashColor: AppColors.purplePastel.withValues(alpha: 0.25),
-      highlightColor: AppColors.purplePastel.withValues(alpha: 0.12),
+      scaffoldBackgroundColor: const Color(0xFFF4F0FA),
+      splashColor: const Color(0xFFD6C5FC).withValues(alpha: 0.25),
+      highlightColor: const Color(0xFFD6C5FC).withValues(alpha: 0.12),
       splashFactory: InkRipple.splashFactory,
       colorScheme: const ColorScheme.light(
-        primary: AppColors.purpleDeep,
-        secondary: AppColors.orangeDeep,
-        surface: AppColors.surface,
-        onSurface: AppColors.textPrimary,
+        primary: Color(0xFF7B4DFF),
+        secondary: Color(0xFFFF8A00),
+        surface: Colors.white,
+        onSurface: Color(0xFF191824),
       ),
-      fontFamily: null, // Uses default clean modern sans-serif
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
-        foregroundColor: AppColors.textPrimary,
+        foregroundColor: Color(0xFF191824),
         elevation: 0,
         centerTitle: false,
       ),
       cardTheme: const CardThemeData(
-        color: AppColors.surface,
+        color: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.all(Radius.circular(24)),
         ),
       ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ButtonStyle(
-          elevation: WidgetStateProperty.all(0),
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.pressed)) {
-              return AppColors.purplePastel.withValues(alpha: 0.25);
-            }
-            if (states.contains(WidgetState.hovered)) {
-              return AppColors.purplePastel.withValues(alpha: 0.1);
-            }
-            return null;
-          }),
-          shape: WidgetStateProperty.all(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
-          ),
-          textStyle: WidgetStateProperty.all(
-            const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 14,
-            ),
-          ),
-        ),
+    );
+  }
+
+  static ThemeData get darkTheme {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xFF0F0E16),
+      splashColor: const Color(0xFF9D78FF).withValues(alpha: 0.25),
+      highlightColor: const Color(0xFF9D78FF).withValues(alpha: 0.12),
+      splashFactory: InkRipple.splashFactory,
+      colorScheme: const ColorScheme.dark(
+        primary: Color(0xFF9D78FF),
+        secondary: Color(0xFFFF9E3B),
+        surface: Color(0xFF1B1926),
+        onSurface: Color(0xFFF7F5FC),
       ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: ButtonStyle(
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.pressed)) {
-              return AppColors.purplePastel.withValues(alpha: 0.25);
-            }
-            return null;
-          }),
-          shape: WidgetStateProperty.all(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-        ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        foregroundColor: Color(0xFFF7F5FC),
+        elevation: 0,
+        centerTitle: false,
       ),
-      textButtonTheme: TextButtonThemeData(
-        style: ButtonStyle(
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.pressed)) {
-              return AppColors.purplePastel.withValues(alpha: 0.2);
-            }
-            return null;
-          }),
-        ),
-      ),
-      iconButtonTheme: IconButtonThemeData(
-        style: ButtonStyle(
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.pressed)) {
-              return AppColors.purplePastel.withValues(alpha: 0.25);
-            }
-            return null;
-          }),
+      cardTheme: const CardThemeData(
+        color: Color(0xFF1B1926),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(24)),
         ),
       ),
     );

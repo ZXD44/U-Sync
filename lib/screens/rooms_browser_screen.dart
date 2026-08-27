@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../theme/app_theme.dart';
 import '../models/room_info.dart';
@@ -157,48 +158,95 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
         child: Column(
           children: [
             // Search & Filter Box
+            // 🔍 Redesigned Modern Search Bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+                  color: AppColors.cardBg,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(
+                    color: AppColors.isDark
+                        ? const Color(0xFF2E2B40)
+                        : AppColors.purplePastel.withValues(alpha: 0.6),
+                    width: 1.2,
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
+                      color: Colors.black.withValues(
+                          alpha: AppColors.isDark ? 0.25 : 0.04),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                child: TextField(
-                  controller: _searchController,
-                  style: const TextStyle(
-                      fontSize: 13, color: AppColors.textPrimary),
-                  decoration: const InputDecoration(
-                    hintText: 'ค้นหาชื่อห้อง หรือ Room ID...',
-                    hintStyle:
-                        TextStyle(color: AppColors.textMuted, fontSize: 13),
-                    prefixIcon: Icon(Icons.search_rounded,
-                        color: AppColors.purpleDeep, size: 20),
-                    border: InputBorder.none,
-                  ),
-                  onChanged: (_) => setState(() {}),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: AppColors.purplePastel.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.search_rounded,
+                        color: AppColors.purpleDeep,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: 'ค้นหาชื่อห้อง หรือรหัส Room ID...',
+                          hintStyle: TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.normal,
+                          ),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding:
+                              EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    if (_searchController.text.isNotEmpty)
+                      IconButton(
+                        icon: const Icon(Icons.cancel_rounded,
+                            size: 18, color: AppColors.textMuted),
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          _searchController.clear();
+                          setState(() {});
+                        },
+                      )
+                    else
+                      const SizedBox(width: 8),
+                  ],
                 ),
               ),
             ),
 
             // Category Filter Chips
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
               child: Row(
                 children: [
-                  _buildFilterChip(0, 'ทั้งหมด'),
+                  _buildFilterChip(0, 'ทั้งหมด', Icons.explore_rounded),
                   const SizedBox(width: 8),
-                  _buildFilterChip(1, 'สาธารณะ'),
+                  _buildFilterChip(1, 'สาธารณะ', Icons.lock_open_rounded),
                   const SizedBox(width: 8),
-                  _buildFilterChip(2, 'ห้องล็อค'),
+                  _buildFilterChip(2, 'ห้องล็อค', Icons.lock_rounded),
                 ],
               ),
             ),
@@ -310,33 +358,62 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
     );
   }
 
-  Widget _buildFilterChip(int index, String label) {
+  Widget _buildFilterChip(int index, String label, IconData icon) {
     final bool isSelected = _selectedFilter == index;
     return GestureDetector(
-      onTap: () => setState(() => _selectedFilter = index),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _selectedFilter = index);
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.darkNav : Colors.white,
+          color: isSelected ? AppColors.darkNav : AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.darkNav
+                : (AppColors.isDark
+                    ? const Color(0xFF2E2B40)
+                    : AppColors.purplePastel.withValues(alpha: 0.5)),
+            width: 1.2,
+          ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
+                    color: Colors.black.withValues(alpha: 0.15),
                     blurRadius: 8,
                     offset: const Offset(0, 3),
                   ),
                 ]
-              : [],
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(
+                        alpha: AppColors.isDark ? 0.2 : 0.02),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : AppColors.textSecondary,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? Colors.white : AppColors.purpleDeep,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+          ],
         ),
       ),
     );

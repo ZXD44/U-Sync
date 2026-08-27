@@ -510,7 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.category_rounded,
+                          Icon(Icons.tune_rounded,
                               size: 16, color: AppColors.purpleDeep),
                           SizedBox(width: 6),
                           Text(
@@ -533,6 +533,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             final cat = _categories[index];
                             final isCatSelected =
                                 _selectedCategory == cat['name'];
+                            final iconData = cat['icon'] as IconData;
+                            final accentColor = cat['deep'] as Color;
+
                             return GestureDetector(
                               onTap: () => _selectCategory(cat),
                               child: AnimatedContainer(
@@ -543,7 +546,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 decoration: BoxDecoration(
                                   color: isCatSelected
                                       ? AppColors.darkNav
-                                      : Colors.white,
+                                      : AppColors.cardBg,
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
                                     color: isCatSelected
@@ -554,7 +557,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.03),
+                                      color: Colors.black.withValues(
+                                          alpha: AppColors.isDark ? 0.2 : 0.03),
                                       blurRadius: 6,
                                       offset: const Offset(0, 2),
                                     ),
@@ -563,9 +567,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(
-                                      cat['icon'] as String,
-                                      style: const TextStyle(fontSize: 14),
+                                    Icon(
+                                      iconData,
+                                      size: 16,
+                                      color: isCatSelected
+                                          ? Colors.white
+                                          : accentColor,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
