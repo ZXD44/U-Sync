@@ -1,0 +1,30 @@
+name: usync_app
+description: "SyncCouple - Real-time YouTube Watch Party Flutter Application"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^3.12.1
+  firebase_database: ^11.3.1
+  youtube_player_flutter: ^9.1.1
+  wakelock_plus: ^1.2.10
+  uuid: ^4.5.1
+  fluttertoast: ^8.2.12
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.3.5
+  http: ^1.2.2
+  qr_flutter: ^4.1.0
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
