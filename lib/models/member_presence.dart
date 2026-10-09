@@ -20,10 +20,15 @@ class MemberPresence {
         lastSeen: 0,
       );
     }
+    final dynamic onlineRaw = map['online'];
+    final bool online = onlineRaw == true ||
+        onlineRaw == 1 ||
+        onlineRaw.toString().toLowerCase() == 'true';
+
     return MemberPresence(
       deviceId: deviceId,
       nickname: map['nickname'] as String? ?? 'เพื่อน',
-      isOnline: map['online'] as bool? ?? false,
+      isOnline: online,
       lastSeen: (map['lastSeen'] as num?)?.toInt() ?? 0,
     );
   }

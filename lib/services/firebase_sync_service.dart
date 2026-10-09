@@ -296,7 +296,7 @@ class FirebaseSyncService {
     }
 
     // 2. Set Up Member Presence with onDisconnect
-    memberRef.set({
+    await memberRef.set({
       'nickname': DeviceService.getNickname(),
       'online': true,
       'lastSeen': ServerValue.timestamp,
@@ -331,6 +331,42 @@ class FirebaseSyncService {
     });
 
     // 5. Listen to Member Presence & Elect New Host if Needed
+    final initialMembersSnap = await roomRef.child('members').get();
+    if (initialMembersSnap.exists && initialMembersSnap.value is Map) {
+      final data = initialMembersSnap.value as Map;
+      final Map<String, MemberPresence> initMembers = {};
+      data.forEach((key, value) {
+        if (value is Map) {
+          initMembers[key.toString()] = MemberPresence.fromMap(key.toString(), value);
+        }
+      });
+      // Ensure self is in map
+      if (!initMembers.containsKey(myDeviceId)) {
+        initMembers[myDeviceId] = MemberPresence(
+          deviceId: myDeviceId,
+          nickname: DeviceService.getNickname(),
+          isOnline: true,
+          lastSeen: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+      if (!_membersController.isClosed) {
+        _membersController.add(initMembers);
+      }
+    } else {
+      // Room has at least current member
+      final Map<String, MemberPresence> initMembers = {
+        myDeviceId: MemberPresence(
+          deviceId: myDeviceId,
+          nickname: DeviceService.getNickname(),
+          isOnline: true,
+          lastSeen: DateTime.now().millisecondsSinceEpoch,
+        ),
+      };
+      if (!_membersController.isClosed) {
+        _membersController.add(initMembers);
+      }
+    }
+
     _membersSubscription = roomRef.child('members').onValue.listen((event) {
       final Map<String, MemberPresence> members = {};
       String? firstOnlineMemberId;
@@ -347,6 +383,17 @@ class FirebaseSyncService {
           }
         });
       }
+
+      // Guarantee self presence is never omitted for local user
+      if (!members.containsKey(myDeviceId)) {
+        members[myDeviceId] = MemberPresence(
+          deviceId: myDeviceId,
+          nickname: DeviceService.getNickname(),
+          isOnline: true,
+          lastSeen: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
+
       if (!_membersController.isClosed) {
         _membersController.add(members);
       }

@@ -91,6 +91,17 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
 
     _isFavorite = FavoritesService.isFavorite(widget.roomId);
     _syncService = FirebaseSyncService();
+
+    // Immediately register self in members list so the member list never gets stuck on "loading"
+    _members = {
+      _syncService.myDeviceId: MemberPresence(
+        deviceId: _syncService.myDeviceId,
+        nickname: DeviceService.getNickname(),
+        isOnline: true,
+        lastSeen: DateTime.now().millisecondsSinceEpoch,
+      ),
+    };
+
     _initSync();
     _startWatchStatsTracker();
     _startViewerSyncGuard();
@@ -1942,18 +1953,23 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
       return a.value.nickname.compareTo(b.value.nickname);
     });
 
-    if (onlineEntries.isEmpty) {
-      return Center(
-        child: Text(
-          'กำลังโหลดรายชื่อสมาชิก...',
-          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-        ),
-      );
-    }
+    final displayedEntries = onlineEntries.isNotEmpty
+        ? onlineEntries
+        : [
+            MapEntry(
+              _syncService.myDeviceId,
+              MemberPresence(
+                deviceId: _syncService.myDeviceId,
+                nickname: DeviceService.getNickname(),
+                isOnline: true,
+                lastSeen: DateTime.now().millisecondsSinceEpoch,
+              ),
+            ),
+          ];
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      children: onlineEntries.map((entry) {
+      children: displayedEntries.map((entry) {
         final isMe = entry.key == _syncService.myDeviceId;
         final isHost = entry.key == _latestRoomState?.hostId;
         final isOwner = entry.key == _latestRoomState?.ownerId;
