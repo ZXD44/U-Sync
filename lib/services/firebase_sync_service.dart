@@ -435,39 +435,84 @@ class FirebaseSyncService {
     return initialState;
   }
 
-  /// Auto transfer host: prioritize owner, then first online member
+  /// Deterministic Auto-Transfer Host:
+  /// ONLY the first online member executes the host update to avoid multi-client race collisions.
   Future<void> _checkAndTransferHost(
     DatabaseReference roomRef,
     Map<String, MemberPresence> members,
     String? firstOnlineMemberId,
   ) async {
+    // Only the first online member or the owner acts as the election leader
+    if (firstOnlineMemberId != myDeviceId) return;
+
     try {
       final stateSnap = await roomRef.child('state').get();
-      if (stateSnap.exists && stateSnap.value is Map) {
-        final stateMap = stateSnap.value as Map;
-        final currentHostId = stateMap['hostId']?.toString() ?? '';
-        final ownerId = stateMap['ownerId']?.toString() ?? '';
-        final hostPresence = members[currentHostId];
+      if (!stateSnap.exists || stateSnap.value is! Map) return;
 
-        // Priority 1: If owner is online, always give host back to owner
-        if (ownerId.isNotEmpty && currentHostId != ownerId) {
-          final ownerPresence = members[ownerId];
-          if (ownerPresence != null && ownerPresence.isOnline) {
-            await roomRef.child('state').update({'hostId': ownerId});
-            return;
-          }
-        }
+      final stateMap = stateSnap.value as Map;
+      final currentHostId = stateMap['hostId']?.toString() ?? '';
+      final ownerId = stateMap['ownerId']?.toString() ?? '';
+      final hostPresence = members[currentHostId];
 
-        // Priority 2: If current host is offline, elect first online member
-        if ((hostPresence == null || !hostPresence.isOnline) &&
-            firstOnlineMemberId != null &&
-            firstOnlineMemberId != currentHostId) {
-          await roomRef.child('state').update({
-            'hostId': firstOnlineMemberId,
-          });
+      // Rule 1: Reclaim priority -> if real owner is online, restore host to owner immediately
+      if (ownerId.isNotEmpty && currentHostId != ownerId) {
+        final ownerPresence = members[ownerId];
+        if (ownerPresence != null && ownerPresence.isOnline) {
+          await roomRef.child('state').update({'hostId': ownerId});
+          return;
         }
       }
+
+      // Rule 2: If current host is offline or empty, assign to the election leader (firstOnlineMemberId)
+      if ((hostPresence == null || !hostPresence.isOnline) &&
+          firstOnlineMemberId != null &&
+          firstOnlineMemberId.isNotEmpty &&
+          firstOnlineMemberId != currentHostId) {
+        await roomRef.child('state').update({'hostId': firstOnlineMemberId});
+      }
     } catch (_) {}
+  }
+
+  /// Manually transfer Host role to another room member (Host or Owner only)
+  Future<bool> transferHostTo(String targetDeviceId) async {
+    if (_currentRoomId == null) return false;
+    final stateRef = _db.ref('rooms/$_currentRoomId/state');
+    try {
+      final snap = await stateRef.get();
+      if (!snap.exists || snap.value is! Map) return false;
+      final data = snap.value as Map;
+      final hostId = data['hostId']?.toString() ?? '';
+      final ownerId = data['ownerId']?.toString() ?? '';
+
+      // Only current Host or Room Owner has privilege to transfer Host
+      if (myDeviceId != hostId && myDeviceId != ownerId) {
+        return false;
+      }
+
+      await stateRef.update({'hostId': targetDeviceId});
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Reclaim Host privilege back to Room Owner
+  Future<bool> reclaimHost() async {
+    if (_currentRoomId == null) return false;
+    final stateRef = _db.ref('rooms/$_currentRoomId/state');
+    try {
+      final snap = await stateRef.get();
+      if (!snap.exists || snap.value is! Map) return false;
+      final data = snap.value as Map;
+      final ownerId = data['ownerId']?.toString() ?? '';
+
+      if (myDeviceId != ownerId) return false;
+
+      await stateRef.update({'hostId': myDeviceId});
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Update the room playback state

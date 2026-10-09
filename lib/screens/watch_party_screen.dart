@@ -2081,24 +2081,104 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.greenPastel,
+              if ((_isHost || _latestRoomState?.ownerId == _syncService.myDeviceId) && !isHost) ...[
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    final success = await _syncService.transferHostTo(entry.key);
+                    if (success) {
+                      Fluttertoast.showToast(msg: 'โอนสิทธิ์หัวห้องให้ ${entry.value.nickname} แล้ว');
+                    } else {
+                      Fluttertoast.showToast(msg: 'ไม่สามารถโอนสิทธิ์หัวห้องได้');
+                    }
+                  },
                   borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  'ออนไลน์',
-                  style: TextStyle(
-                    color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF1B4332),
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF382A10) : const Color(0xFFFFF3CD),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF6B4810) : const Color(0xFFFFC67D),
+                        width: 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.star_outline_rounded,
+                            size: 12,
+                            color: isDark ? const Color(0xFFFFC67D) : const Color(0xFF856404)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'ให้เป็นหัวห้อง',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? const Color(0xFFFFC67D) : const Color(0xFF856404),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+              ] else if (isMe && !isHost && _latestRoomState?.ownerId == _syncService.myDeviceId) ...[
+                const SizedBox(width: 6),
+                InkWell(
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    final success = await _syncService.reclaimHost();
+                    if (success) {
+                      Fluttertoast.showToast(msg: 'ดึงสิทธิ์หัวห้องกลับคืนเรียบร้อย');
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF14301D) : const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.shield_rounded,
+                            size: 12,
+                            color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF2E7D32)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'ดึงสิทธิ์คืน',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.greenPastel,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'ออนไลน์',
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF1B4332),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
