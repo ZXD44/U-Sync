@@ -164,9 +164,14 @@ do_github_release() {
     else
         echo -e "${YELLOW}⚡ กำลังสร้าง Release ใหม่ v$VER บน GitHub...${NC}"
         gh release create "v$VER" "$DEST_APK#U-Sync.apk" \
-            --title "U-Sync v$VER" \
+            --title "U-Sync v$VER (Android APK + iOS IPA)" \
             --notes "$USER_NOTES"
     fi
+
+    # Trigger GitHub Actions macOS runner to build and attach iOS IPA automatically
+    git tag -f "v$VER" 2>/dev/null || true
+    git push -f origin "v$VER" 2>/dev/null || true
+    echo -e "${CYAN}🍎 GitHub Actions เริ่มกระบวนการ Build iOS IPA (.ipa) บน macOS Server อัตโนมัติ...${NC}"
 
     echo ""
     echo -e "${GREEN}${BOLD}============================================================${NC}"
@@ -174,6 +179,7 @@ do_github_release() {
     echo -e "${GREEN}${BOLD}============================================================${NC}"
     echo -e "🔗 ลิงก์ Release:  ${CYAN}${GITHUB_URL}/releases/tag/v$VER${NC}"
     echo -e "📥 ดาวน์โหลด APK:  ${CYAN}${GITHUB_URL}/releases/download/v$VER/U-Sync.apk${NC}"
+    echo -e "🍏 ดาวน์โหลด IPA:  ${CYAN}${GITHUB_URL}/releases/download/v$VER/U-Sync.ipa (พร้อมใช้งานหลัง Action เสร็จสิ้น)${NC}"
     echo -e "📝 รายละเอียด:"
     echo -e "${YELLOW}$USER_NOTES${NC}"
     echo ""

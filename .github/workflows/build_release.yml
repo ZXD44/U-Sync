@@ -1,0 +1,152 @@
+name: Build & Release U-Sync (APK + IPA)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.12)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: 🤖 Build Android Release APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Android Release APK
+        run: flutter build apk --release --target-platform android-arm,android-arm64
+
+      - name: Prepare APK Artifact
+        run: |
+          mkdir -p release_artifacts
+          cp build/app/outputs/flutter-apk/app-release.apk release_artifacts/U-Sync.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: u-sync-apk
+          path: release_artifacts/U-Sync.apk
+
+  build-ios:
+    name: 🍎 Build iOS Release IPA
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build iOS Release App (Unsigned for Sideloading / AltStore)
+        run: |
+          flutter build ios --release --no-codesign
+
+      - name: Package .app into .ipa
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r U-Sync.ipa Payload
+          cd ../../..
+          mkdir -p release_artifacts
+          cp build/ios/iphoneos/U-Sync.ipa release_artifacts/U-Sync.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: u-sync-ipa
+          path: release_artifacts/U-Sync.ipa
+
+  release:
+    name: 🚀 Create GitHub Release (APK + IPA)
+    needs: [build-android, build-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: u-sync-apk
+          path: release_artifacts
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: u-sync-ipa
+          path: release_artifacts
+
+      - name: Extract Tag or Version
+        id: vars
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "TAG=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "VER=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          elif [ -n "${{ github.ref_name }}" ] && [[ "${{ github.ref_name }}" == v* ]]; then
+            echo "TAG=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "VER=${github.ref_name#v}" >> $GITHUB_OUTPUT
+          else
+            VER=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d ' "')
+            echo "TAG=v$VER" >> $GITHUB_OUTPUT
+            echo "VER=$VER" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish Dual Release (APK + IPA)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.TAG }}
+          name: "Release ${{ steps.vars.outputs.TAG }} (Android APK + iOS IPA)"
+          body: |
+            ## 🚀 ยูซิงค์ (U-Sync) ${{ steps.vars.outputs.TAG }}
+            
+            ### 📦 ไฟล์ติดตั้งที่พร้อมใช้งาน:
+            - **🤖 Android APK:** `U-Sync.apk` (ติดตั้งได้ทันทีบน Android ทุกรุ่น)
+            - **🍎 iOS IPA:** `U-Sync.ipa` (ติดตั้งบน iPhone / iPad ผ่าน AltStore, Sideloadly, หรือ TrollStore)
+            
+            ---
+            ### 📱 วิธีติดตั้งบน iOS (iPhone / iPad):
+            1. ดาวน์โหลดไฟล์ `U-Sync.ipa`
+            2. ติดตั้งผ่านโปรแกรม **Sideloadly** หรือ **AltStore** บนคอมพิวเตอร์ (Sign ฟรีด้วย Apple ID)
+            3. เข้าไปที่ **การตั้งค่า (Settings)** -> **ทั่วไป (General)** -> **VPN & การจัดการอุปกรณ์** แล้วแตะ **เชื่อถือ (Trust)**
+          files: |
+            release_artifacts/U-Sync.apk
+            release_artifacts/U-Sync.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
