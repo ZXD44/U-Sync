@@ -327,12 +327,13 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
     }
   }
 
-  /// Toggle Thai subtitles / captions on or off
+  /// Toggle Subtitles / Captions (Thai primary, auto-captions fallback)
   void _toggleCaptions() {
     HapticFeedback.lightImpact();
     setState(() {
       _isCaptionsEnabled = !_isCaptionsEnabled;
     });
+
     if (_playerController != null && _currentVideoId.isNotEmpty) {
       final pos = _playerController!.value.position.inMilliseconds / 1000.0;
       final isPlaying = _playerController!.value.isPlaying;
@@ -342,8 +343,12 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
         autoPlay: isPlaying,
       );
     }
+
     Fluttertoast.showToast(
-      msg: _isCaptionsEnabled ? 'เปิดคำบรรยายไทย (ซับไทย)' : 'ปิดคำบรรยาย',
+      msg: _isCaptionsEnabled
+          ? 'เปิดคำบรรยาย (ซับไตเติล)'
+          : 'ปิดคำบรรยาย',
+      backgroundColor: AppColors.darkNav,
     );
   }
 

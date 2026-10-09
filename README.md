@@ -13,8 +13,8 @@
 
 * 📍 **โฟลเดอร์เก็บไฟล์:** `/home/zirconx/Documents/U-Sync/release/`
 * 📦 **ขนาดไฟล์ APK:** **~34.5 MB** (ลดขนาดลง 37.5% ด้วย R8 ProGuard Shrinking + ABI Filtering)
-* 📱 **สถาปัตยกรรม:** ARM64-v8a + ARMv7 (รองรับมือถือ Android ทุกรุ่น)
-* 🏷️ **เวอร์ชันล่าสุด:** **v1.0.10**
+* 📱 **สถาปัตยกรรม:** ARM64-v8a + ARMv7 (รองรับมือถือ Android ทุกรุ่น) & iOS (iPhone/iPad)
+* 🏷️ **เวอร์ชันล่าสุด:** **v1.0.11**
 * 🚀 **ลิงก์ดาวน์โหลด GitHub Release:** [ZXD44/U-Sync Releases](https://github.com/ZXD44/U-Sync/releases)
 * ⚡ **สคริปต์คอมไพล์ & ปล่อยเวอร์ชัน:** `./build_apk.sh`
 
