@@ -255,6 +255,19 @@ class FirebaseSyncService {
     // Cancel any pending deletion for this room immediately
     _cancelDeletionCountdown(roomId);
 
+    // Concurrently write member presence and read current state
+    final memberPresenceMap = {
+      'nickname': DeviceService.getNickname(),
+      'online': true,
+      'lastSeen': ServerValue.timestamp,
+    };
+
+    final memberWriteFuture = memberRef.set(memberPresenceMap).catchError((_) {});
+    memberRef.onDisconnect().update({
+      'online': false,
+      'lastSeen': ServerValue.timestamp,
+    }).catchError((_) {});
+
     RoomState? initialState;
 
     // 1. Initial State Check / Room Creation
@@ -274,14 +287,14 @@ class FirebaseSyncService {
         'isLocked': isLocked,
         'password': password,
       };
-      await stateRef.set(initialMap);
+      stateRef.set(initialMap).catchError((_) {});
       initialState = RoomState.fromMap(initialMap);
 
-      // Clean other rooms created by this user in background
-      cleanOldRoomsForDevice(myDeviceId, exceptRoomId: roomId);
+      // Clean other rooms created by this user in background asynchronously
+      unawaited(cleanOldRoomsForDevice(myDeviceId, exceptRoomId: roomId));
     } else {
       // Room exists — remove deleteAt countdown immediately
-      stateRef.child('deleteAt').remove();
+      stateRef.child('deleteAt').remove().catchError((_) {});
 
       final stateMap = Map<String, dynamic>.from(stateSnapshot.value as Map);
       final ownerId = stateMap['ownerId']?.toString() ?? '';
@@ -289,24 +302,16 @@ class FirebaseSyncService {
       // Owner reclaim host priority: if I am the original owner, reclaim host immediately
       if (ownerId == myDeviceId || stateMap['hostId'] == null || stateMap['hostId'] == '') {
         stateMap['hostId'] = myDeviceId;
-        stateRef.update({'hostId': myDeviceId});
+        stateRef.update({'hostId': myDeviceId}).catchError((_) {});
       }
 
       initialState = RoomState.fromMap(stateMap);
     }
 
-    // 2. Set Up Member Presence with onDisconnect
-    await memberRef.set({
-      'nickname': DeviceService.getNickname(),
-      'online': true,
-      'lastSeen': ServerValue.timestamp,
-    });
-    memberRef.onDisconnect().update({
-      'online': false,
-      'lastSeen': ServerValue.timestamp,
-    });
+    // Await presence write to ensure member entry is propagated
+    await memberWriteFuture;
 
-    // 3. Listen to Connection State
+    // 2. Listen to Connection State
     final connectedRef = _db.ref('.info/connected');
     _connectedSubscription = connectedRef.onValue.listen((event) {
       final connected = event.snapshot.value == true;
@@ -315,11 +320,11 @@ class FirebaseSyncService {
           'nickname': DeviceService.getNickname(),
           'online': true,
           'lastSeen': ServerValue.timestamp,
-        });
+        }).catchError((_) {});
       }
     });
 
-    // 4. Listen to Room State & Auto Host Transfer
+    // 3. Listen to Room State & Auto Host Transfer
     _stateSubscription = stateRef.onValue.listen((event) {
       if (event.snapshot.exists && event.snapshot.value is Map) {
         final stateMap = event.snapshot.value as Map;
@@ -330,41 +335,17 @@ class FirebaseSyncService {
       }
     });
 
-    // 5. Listen to Member Presence & Elect New Host if Needed
-    final initialMembersSnap = await roomRef.child('members').get();
-    if (initialMembersSnap.exists && initialMembersSnap.value is Map) {
-      final data = initialMembersSnap.value as Map;
-      final Map<String, MemberPresence> initMembers = {};
-      data.forEach((key, value) {
-        if (value is Map) {
-          initMembers[key.toString()] = MemberPresence.fromMap(key.toString(), value);
-        }
-      });
-      // Ensure self is in map
-      if (!initMembers.containsKey(myDeviceId)) {
-        initMembers[myDeviceId] = MemberPresence(
-          deviceId: myDeviceId,
-          nickname: DeviceService.getNickname(),
-          isOnline: true,
-          lastSeen: DateTime.now().millisecondsSinceEpoch,
-        );
-      }
-      if (!_membersController.isClosed) {
-        _membersController.add(initMembers);
-      }
-    } else {
-      // Room has at least current member
-      final Map<String, MemberPresence> initMembers = {
+    // 4. Listen to Member Presence & Elect New Host if Needed
+    // Emit initial self-presence immediately so UI does not wait on another network roundtrip
+    if (!_membersController.isClosed) {
+      _membersController.add({
         myDeviceId: MemberPresence(
           deviceId: myDeviceId,
           nickname: DeviceService.getNickname(),
           isOnline: true,
           lastSeen: DateTime.now().millisecondsSinceEpoch,
         ),
-      };
-      if (!_membersController.isClosed) {
-        _membersController.add(initMembers);
-      }
+      });
     }
 
     _membersSubscription = roomRef.child('members').onValue.listen((event) {

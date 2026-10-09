@@ -288,7 +288,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _countdownTimer?.cancel();
     if (_activeRoomId != null && _activeRoomId != cleanRoomId) {
-      _homeSyncService.deleteRoomImmediately(_activeRoomId!);
+      final oldId = _activeRoomId!;
+      unawaited(_homeSyncService.deleteRoomImmediately(oldId));
     }
 
     Navigator.push(
