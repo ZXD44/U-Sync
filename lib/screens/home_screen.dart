@@ -8,7 +8,9 @@ import '../services/device_service.dart';
 import '../services/stats_service.dart';
 import '../services/favorites_service.dart';
 import '../services/firebase_sync_service.dart';
+import '../services/theme_service.dart';
 import '../models/room_info.dart';
+import '../services/url_helper.dart';
 import 'watch_party_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,12 +23,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _createRoomController = TextEditingController();
   final TextEditingController _pinController = TextEditingController();
+  final TextEditingController _videoUrlController = TextEditingController();
 
   // Room options
   bool _isRoomLocked = false;
-  String _selectedCategory = '';
+  String? _selectedCategory;
 
-  // Rejoin banner state
+  // Active room state
   bool _hasActiveRoom = false;
   String? _activeRoomId;
   int _countdownRemaining = 0;
@@ -34,63 +37,70 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription? _activeRoomSubscription;
   final FirebaseSyncService _homeSyncService = FirebaseSyncService();
 
-  // Quick categories
-  final List<Map<String, dynamic>> _categories = [
-    {
-      'icon': '🎵',
-      'name': 'ฟังเพลง Lo-Fi',
-      'color': AppColors.purplePastel,
-      'deep': AppColors.purpleDeep,
-      'prefix': 'ห้องฟังเพลง'
-    },
-    {
-      'icon': '🎮',
-      'name': 'สตรีมเกม',
-      'color': AppColors.bluePastel,
-      'deep': AppColors.blueDeep,
-      'prefix': 'แก๊งเกมเมอร์'
-    },
-    {
-      'icon': '🍿',
-      'name': 'หนัง & ซีรีส์',
-      'color': AppColors.orangePastel,
-      'deep': AppColors.orangeDeep,
-      'prefix': 'โรงหนังส่วนตัว'
-    },
-    {
-      'icon': '🎙️',
-      'name': 'พอดแคสต์ & คุยสด',
-      'color': AppColors.greenPastel,
-      'deep': AppColors.greenDeep,
-      'prefix': 'ทอล์คโชว์'
-    },
-    {
-      'icon': '📺',
-      'name': 'อนิเมะ & การ์ตูน',
-      'color': AppColors.pinkPastel,
-      'deep': AppColors.pinkDeep,
-      'prefix': 'โอตาคุคลับ'
-    },
-    {
-      'icon': '⚽',
-      'name': 'กีฬา & ไฮไลท์',
-      'color': AppColors.bluePastel,
-      'deep': AppColors.blueDeep,
-      'prefix': 'รวมพลคนดูกีฬา'
-    },
-  ];
+  // Categories with vector icons
+  List<Map<String, dynamic>> get _categories => [
+        {
+          'icon': Icons.music_note_rounded,
+          'name': 'ฟังเพลง Lo-Fi',
+          'color': AppColors.purplePastel,
+          'deep': AppColors.purpleDeep,
+          'prefix': 'ห้องฟังเพลง',
+        },
+        {
+          'icon': Icons.sports_esports_rounded,
+          'name': 'สตรีมเกม',
+          'color': AppColors.bluePastel,
+          'deep': AppColors.blueDeep,
+          'prefix': 'แก๊งเกมเมอร์',
+        },
+        {
+          'icon': Icons.movie_filter_rounded,
+          'name': 'หนัง & ซีรีส์',
+          'color': AppColors.orangePastel,
+          'deep': AppColors.orangeDeep,
+          'prefix': 'โรงหนังส่วนตัว',
+        },
+        {
+          'icon': Icons.mic_rounded,
+          'name': 'พอดแคสต์ & คุยสด',
+          'color': AppColors.greenPastel,
+          'deep': AppColors.greenDeep,
+          'prefix': 'ทอล์คโชว์',
+        },
+        {
+          'icon': Icons.auto_awesome_rounded,
+          'name': 'อนิเมะ & การ์ตูน',
+          'color': AppColors.pinkPastel,
+          'deep': AppColors.pinkDeep,
+          'prefix': 'โอตาคุคลับ',
+        },
+        {
+          'icon': Icons.sports_soccer_rounded,
+          'name': 'กีฬา & ไฮไลท์',
+          'color': AppColors.bluePastel,
+          'deep': AppColors.blueDeep,
+          'prefix': 'รวมพลคนดูกีฬา',
+        },
+      ];
 
   @override
   void initState() {
     super.initState();
     _generateRandomRoom();
     _checkActiveRoom();
+    ThemeService.isDarkModeNotifier.addListener(_onThemeChanged);
+  }
+
+  void _onThemeChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    ThemeService.isDarkModeNotifier.removeListener(_onThemeChanged);
     _createRoomController.dispose();
     _pinController.dispose();
+    _videoUrlController.dispose();
     _countdownTimer?.cancel();
     _activeRoomSubscription?.cancel();
     _homeSyncService.dispose();
@@ -98,11 +108,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Real-time check and listener for active room existence
-  void _checkActiveRoom() async {
+  void _checkActiveRoom() {
     _activeRoomSubscription?.cancel();
     final lastRoom = FirebaseSyncService.lastActiveRoomId;
     if (lastRoom == null || lastRoom.isEmpty) {
-      if (mounted) setState(() => _hasActiveRoom = false);
+      if (mounted) {
+        setState(() {
+          _hasActiveRoom = false;
+          _activeRoomId = null;
+        });
+      }
       return;
     }
 
@@ -187,21 +202,26 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _dismissActiveRoom() {
+  void _dismissActiveRoom() async {
     final rid = _activeRoomId;
     _countdownTimer?.cancel();
     _activeRoomSubscription?.cancel();
     FirebaseSyncService.clearLastActiveRoom();
-    if (rid != null) {
-      _homeSyncService.deleteRoomImmediately(rid);
-    }
+
     setState(() {
       _hasActiveRoom = false;
       _activeRoomId = null;
       _countdownRemaining = 0;
     });
+    _generateRandomRoom();
+
+    if (rid != null) {
+      await _homeSyncService.deleteRoomImmediately(rid);
+    }
+    await _homeSyncService.cleanOldRoomsForDevice(_homeSyncService.myDeviceId);
+
     Fluttertoast.showToast(
-      msg: 'ยกเลิกห้องเดิมแล้ว สามารถสร้างหรือเข้าห้องใหม่ได้ทันที',
+      msg: 'ลบห้องเดิมเรียบร้อย สามารถสร้างห้องใหม่ได้ทันที',
       toastLength: Toast.LENGTH_SHORT,
     );
   }
@@ -236,11 +256,29 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _selectCategory(Map<String, dynamic> cat) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_selectedCategory == cat['name']) {
+        _selectedCategory = null;
+        _generateRandomRoom();
+      } else {
+        _selectedCategory = cat['name'] as String;
+        _generateRandomRoom(cat['prefix'] as String);
+        Fluttertoast.showToast(
+          msg: 'เลือกหมวดหมู่ "${cat['name']}" แล้ว!',
+          toastLength: Toast.LENGTH_SHORT,
+        );
+      }
+    });
+  }
+
   void _enterRoom({
     required String roomId,
     String? roomName,
     bool isLocked = false,
     String password = '',
+    String initialVideoId = '',
   }) {
     final cleanRoomId = roomId.trim();
     if (cleanRoomId.isEmpty) {
@@ -248,32 +286,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    if (_hasActiveRoom &&
-        _activeRoomId != null &&
-        _activeRoomId != cleanRoomId) {
-      Fluttertoast.showToast(
-        msg: 'คุณมีห้องที่เปิดอยู่แล้ว กำลังนำท่านกลับเข้าห้องเดิม "$_activeRoomId"',
-        toastLength: Toast.LENGTH_LONG,
-        backgroundColor: const Color(0xFF856404),
-      );
-      _countdownTimer?.cancel();
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => WatchPartyScreen(
-            roomId: _activeRoomId!,
-            roomName: _activeRoomId!,
-            initialLocked: false,
-            password: '',
-          ),
-        ),
-      ).then((_) {
-        if (mounted) {
-          setState(() {});
-          _checkActiveRoom();
-        }
-      });
-      return;
+    _countdownTimer?.cancel();
+    if (_activeRoomId != null && _activeRoomId != cleanRoomId) {
+      _homeSyncService.deleteRoomImmediately(_activeRoomId!);
     }
 
     Navigator.push(
@@ -284,6 +299,7 @@ class _HomeScreenState extends State<HomeScreen> {
           roomName: roomName ?? cleanRoomId,
           initialLocked: isLocked,
           password: password,
+          initialVideoId: initialVideoId,
         ),
       ),
     ).then((_) {
@@ -294,272 +310,192 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _selectCategory(Map<String, dynamic> cat) {
-    HapticFeedback.lightImpact();
-    setState(() {
-      _selectedCategory = cat['name'] as String;
-    });
-    _generateRandomRoom(cat['prefix'] as String);
-    Fluttertoast.showToast(
-      msg: 'เลือกหมวดหมู่ "${cat['name']}" แล้ว!',
-      toastLength: Toast.LENGTH_SHORT,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final nickname = DeviceService.getNickname();
     final avatarEmoji = StatsService.avatarEmoji;
     final favoriteRooms = FavoritesService.favorites;
+    final isDark = AppColors.isDark;
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text(
+          'หน้าแรก',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 1. Header Bar: Profile greeting
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            colors: [AppColors.purpleDeep, AppColors.pinkDeep],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.purpleDeep.withValues(alpha: 0.25),
-                              blurRadius: 10,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
+                  // 1. User Greeting Header
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBg,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF282438) : Colors.transparent,
+                        width: 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
+                          blurRadius: 12,
+                          offset: const Offset(0, 3),
                         ),
-                        child: CircleAvatar(
-                          radius: 22,
-                          backgroundColor: Colors.white,
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundColor: AppColors.purplePastel,
                           child: Text(
                             avatarEmoji,
-                            style: const TextStyle(fontSize: 22),
+                            style: const TextStyle(fontSize: 24),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'สวัสดี, $nickname',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'สวัสดี, $nickname',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            const Text(
-                              'แอปยูซิงค์ • ดู YouTube พร้อมกันแบบ Real-time',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
+                              const SizedBox(height: 2),
+                              Text(
+                                'ยูซิงค์ • รับชม YouTube พร้อมกันแบบ Real-time',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
 
-                  // 2. ⏳ REJOIN ACTIVE ROOM BANNER (if alive)
-                  if (_hasActiveRoom && _activeRoomId != null) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFFFF3CD), Color(0xFFFFE8A1)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(22),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.amber.withValues(alpha: 0.2),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.access_time_rounded,
-                                  color: Color(0xFF856404), size: 20),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  _countdownRemaining > 0
-                                      ? 'ห้องเดิมกำลังจะถูกลบใน $_countdownRemaining วินาที'
-                                      : 'ห้องเดิมของคุณยังเปิดอยู่',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF856404),
-                                  ),
-                                ),
-                              ),
-                              InkWell(
-                                onTap: _dismissActiveRoom,
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.6),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.close_rounded,
-                                    size: 16,
-                                    color: Color(0xFF856404),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'ห้อง: $_activeRoomId',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF856404),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF856404),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 10),
-                                  ),
-                                  onPressed: () {
-                                    _countdownTimer?.cancel();
-                                    _enterRoom(roomId: _activeRoomId!);
-                                  },
-                                  icon: const Icon(Icons.login_rounded,
-                                      size: 16, color: Colors.white),
-                                  label: const Text(
-                                    'กลับเข้าห้องเดิม',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (_countdownRemaining > 0) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  width: 46,
-                                  height: 46,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.7),
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '${_countdownRemaining}s',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF856404),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // 3. Quick Category Chips (หมวดหมู่ดูด่วน)
+                  // 2. Quick Category Chips
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.tune_rounded,
-                              size: 16, color: AppColors.purpleDeep),
-                          SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: AppColors.purplePastel.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.local_fire_department_rounded,
+                              size: 14,
+                              color: AppColors.purpleDeep,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            'เลือกหมวดหมู่ยอดนิยม',
+                            'หมวดหมู่ยอดนิยม',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w800,
                               color: AppColors.textPrimary,
                             ),
                           ),
+                          const Spacer(),
+                          if (_selectedCategory != null)
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                setState(() {
+                                  _selectedCategory = null;
+                                  _generateRandomRoom();
+                                });
+                              },
+                              child: Text(
+                                'รีเซ็ต',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.purpleDeep,
+                                ),
+                              ),
+                            )
+                          else
+                            Text(
+                              'แตะเพื่อเลือกธีม',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                              ),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 10),
                       SizedBox(
-                        height: 38,
+                        height: 44,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
                           itemCount: _categories.length,
                           itemBuilder: (context, index) {
                             final cat = _categories[index];
-                            final isCatSelected =
-                                _selectedCategory == cat['name'];
+                            final isCatSelected = _selectedCategory == cat['name'];
                             final iconData = cat['icon'] as IconData;
                             final accentColor = cat['deep'] as Color;
+                            final pastelColor = cat['color'] as Color;
 
                             return GestureDetector(
                               onTap: () => _selectCategory(cat),
                               child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 200),
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
                                 margin: const EdgeInsets.only(right: 8),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
+                                    horizontal: 10, vertical: 5),
                                 decoration: BoxDecoration(
                                   color: isCatSelected
-                                      ? AppColors.darkNav
+                                      ? (isDark ? AppColors.purpleDeep : AppColors.darkNav)
                                       : AppColors.cardBg,
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius: BorderRadius.circular(18),
                                   border: Border.all(
                                     color: isCatSelected
-                                        ? AppColors.darkNav
-                                        : AppColors.purplePastel
-                                            .withValues(alpha: 0.6),
+                                        ? (isDark ? AppColors.purpleDeep : AppColors.darkNav)
+                                        : (isDark
+                                            ? const Color(0xFF2E2940)
+                                            : pastelColor.withValues(alpha: 0.6)),
                                     width: 1.2,
                                   ),
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black.withValues(
-                                          alpha: AppColors.isDark ? 0.2 : 0.03),
-                                      blurRadius: 6,
+                                          alpha: isCatSelected
+                                              ? 0.2
+                                              : (isDark ? 0.25 : 0.03)),
+                                      blurRadius: isCatSelected ? 8 : 5,
                                       offset: const Offset(0, 2),
                                     ),
                                   ],
@@ -567,14 +503,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
-                                      iconData,
-                                      size: 16,
-                                      color: isCatSelected
-                                          ? Colors.white
-                                          : accentColor,
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: isCatSelected
+                                            ? Colors.white.withValues(alpha: 0.2)
+                                            : pastelColor.withValues(alpha: 0.6),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        iconData,
+                                        size: 14,
+                                        color: isCatSelected
+                                            ? Colors.white
+                                            : accentColor,
+                                      ),
                                     ),
-                                    const SizedBox(width: 6),
+                                    const SizedBox(width: 8),
                                     Text(
                                       cat['name'] as String,
                                       style: TextStyle(
@@ -585,6 +531,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                             : AppColors.textPrimary,
                                       ),
                                     ),
+                                    if (isCatSelected) ...[
+                                      const SizedBox(width: 6),
+                                      const Icon(
+                                        Icons.check_circle_rounded,
+                                        size: 14,
+                                        color: Color(0xFF4ADE80),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -597,273 +551,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   const SizedBox(height: 16),
 
-                  // 4. Primary Card 1: "สร้างห้องดูคลิปด่วน" (Main Centerpiece Bento)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(22),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFD6C5FC), Color(0xFFFFE3D1)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(28),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.purplePastel.withValues(alpha: 0.4),
-                          blurRadius: 18,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.75),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                _hasActiveRoom && _activeRoomId != null
-                                    ? 'ห้องเดิมยังเปิดอยู่'
-                                    : 'สร้างห้องใหม่',
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.purpleDeep,
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            // Lock toggle button
-                            if (!_hasActiveRoom) ...[
-                              InkWell(
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  setState(() {
-                                    _isRoomLocked = !_isRoomLocked;
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(14),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 9, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: _isRoomLocked
-                                        ? AppColors.pinkDeep
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        _isRoomLocked
-                                            ? Icons.lock_rounded
-                                            : Icons.lock_open_rounded,
-                                        size: 13,
-                                        color: _isRoomLocked
-                                            ? Colors.white
-                                            : AppColors.textSecondary,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _isRoomLocked ? 'ล็อค PIN' : 'ห้องสาธารณะ',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: _isRoomLocked
-                                              ? Colors.white
-                                              : AppColors.textPrimary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              InkWell(
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  _generateRandomRoom();
-                                },
-                                borderRadius: BorderRadius.circular(14),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 9, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(14),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.shuffle_rounded,
-                                          size: 13,
-                                          color: AppColors.purpleDeep),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'สุ่มชื่อ',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.purpleDeep,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          _hasActiveRoom && _activeRoomId != null
-                              ? 'คุณมีห้องที่เปิดใช้งานอยู่แล้ว'
-                              : 'เริ่มปาร์ตี้ดูคลิปด้วยกัน',
-                          style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _hasActiveRoom && _activeRoomId != null
-                              ? 'ห้องเดิมของคุณ "$_activeRoomId" กำลังทำงานอยู่ กดเพื่อกลับเข้าห้องเดิม'
-                              : 'ส่งชื่อห้องให้เพื่อน แล้วเข้ามาดูคลิปพร้อมกันได้ทันที',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF5A4D78),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Room Name TextField
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: TextField(
-                            controller: _createRoomController,
-                            enabled: !_hasActiveRoom,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                            ),
-                            decoration: InputDecoration(
-                              hintText: _hasActiveRoom
-                                  ? 'ห้องเดิม: $_activeRoomId'
-                                  : 'ตั้งชื่อหรือรหัสห้อง',
-                              border: InputBorder.none,
-                              icon: const Icon(Icons.meeting_room_rounded,
-                                  color: AppColors.purpleDeep, size: 20),
-                            ),
-                          ),
-                        ),
-
-                        // Optional PIN field if locked
-                        if (_isRoomLocked && !_hasActiveRoom) ...[
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            child: TextField(
-                              controller: _pinController,
-                              keyboardType: TextInputType.number,
-                              maxLength: 6,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.pinkDeep,
-                              ),
-                              decoration: const InputDecoration(
-                                hintText: 'ตั้งรหัสผ่าน PIN (ตัวเลข 4-6 หลัก)',
-                                hintStyle: TextStyle(
-                                    fontSize: 12, color: AppColors.textMuted),
-                                border: InputBorder.none,
-                                counterText: '',
-                                icon: Icon(Icons.key_rounded,
-                                    color: AppColors.pinkDeep, size: 18),
-                              ),
-                            ),
-                          ),
-                        ],
-
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.darkNav,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                            ),
-                            onPressed: () {
-                              if (_hasActiveRoom && _activeRoomId != null) {
-                                _enterRoom(roomId: _activeRoomId!);
-                              } else {
-                                final rid = _createRoomController.text.trim();
-                                final pin = _pinController.text.trim();
-                                if (_isRoomLocked && pin.isEmpty) {
-                                  Fluttertoast.showToast(
-                                      msg: 'กรุณาตั้งรหัสผ่าน PIN สำหรับห้องล็อค');
-                                  return;
-                                }
-                                _enterRoom(
-                                  roomId: rid,
-                                  isLocked: _isRoomLocked,
-                                  password: pin,
-                                );
-                              }
-                            },
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                    _hasActiveRoom
-                                        ? Icons.login_rounded
-                                        : Icons.play_arrow_rounded,
-                                    color: Colors.white,
-                                    size: 20),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _hasActiveRoom && _activeRoomId != null
-                                      ? 'กลับเข้าห้องเดิม'
-                                      : 'สร้างห้อง & เริ่มเล่นเลย',
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  // 3. Primary Centerpiece: Create Room / Rejoin Room Card
+                  _buildCreateOrRejoinCard(isDark),
 
                   const SizedBox(height: 18),
 
-                  // 5. 🔥 Live Public Rooms Carousel (พรีวิวห้องที่กำลังดูสดอยู่)
+                  // 5. Live Public Rooms Preview
                   StreamBuilder<List<RoomInfo>>(
                     stream: _homeSyncService.getPublicRooms(),
                     builder: (context, snapshot) {
@@ -887,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Text(
+                              Text(
                                 'กำลังดูสดอยู่ตอนนี้',
                                 style: TextStyle(
                                   fontSize: 14,
@@ -898,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               const Spacer(),
                               Text(
                                 '${liveRooms.length} ห้องกำลังดูอยู่',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11,
                                   color: AppColors.textSecondary,
                                   fontWeight: FontWeight.w600,
@@ -911,6 +604,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             height: 110,
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
                               itemCount: liveRooms.length,
                               itemBuilder: (context, index) {
                                 final room = liveRooms[index];
@@ -926,17 +620,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                     margin: const EdgeInsets.only(right: 12),
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: AppColors.cardBg,
                                       borderRadius: BorderRadius.circular(20),
                                       border: Border.all(
-                                        color: AppColors.bluePastel
-                                            .withValues(alpha: 0.6),
+                                        color: isDark
+                                            ? const Color(0xFF2B273D)
+                                            : AppColors.bluePastel.withValues(alpha: 0.6),
                                         width: 1.5,
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.03),
+                                          color: Colors.black.withValues(
+                                              alpha: isDark ? 0.25 : 0.03),
                                           blurRadius: 10,
                                           offset: const Offset(0, 3),
                                         ),
@@ -955,7 +650,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 room.roomName.isNotEmpty
                                                     ? room.roomName
                                                     : room.roomId,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 13,
                                                   fontWeight: FontWeight.bold,
                                                   color: AppColors.textPrimary,
@@ -965,7 +660,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               ),
                                             ),
                                             if (room.isLocked)
-                                              const Icon(Icons.lock_rounded,
+                                              Icon(Icons.lock_rounded,
                                                   size: 13,
                                                   color: AppColors.pinkDeep),
                                           ],
@@ -974,7 +669,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           room.videoId.isNotEmpty
                                               ? '🎬 เล่น YouTube อยู่'
                                               : '⌛ กำลังเลือกคลิป',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11,
                                             color: AppColors.textSecondary,
                                           ),
@@ -986,10 +681,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                               MainAxisAlignment.spaceBetween,
                                           children: [
                                             Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2),
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8, vertical: 2),
                                               decoration: BoxDecoration(
                                                 color: AppColors.bluePastel
                                                     .withValues(alpha: 0.4),
@@ -999,14 +692,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  const Icon(
+                                                  Icon(
                                                       Icons.people_rounded,
                                                       size: 12,
                                                       color: AppColors.blueDeep),
                                                   const SizedBox(width: 4),
                                                   Text(
                                                     '${room.memberCount} คน',
-                                                    style: const TextStyle(
+                                                    style: TextStyle(
                                                       fontSize: 10,
                                                       fontWeight:
                                                           FontWeight.bold,
@@ -1017,12 +710,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                               ),
                                             ),
                                             Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 3),
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8, vertical: 3),
                                               decoration: BoxDecoration(
-                                                color: AppColors.darkNav,
+                                                color: isDark ? AppColors.purpleDeep : AppColors.darkNav,
                                                 borderRadius:
                                                     BorderRadius.circular(10),
                                               ),
@@ -1050,12 +741,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
 
-                  // 6. Favorite Rooms (if any)
+                  // 6. Favorite Rooms
                   if (favoriteRooms.isNotEmpty) ...[
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.star_rounded, color: Colors.amber, size: 18),
-                        SizedBox(width: 6),
+                        const Icon(Icons.star_rounded, color: Colors.amber, size: 18),
+                        const SizedBox(width: 6),
                         Text(
                           'ห้องโปรดของคุณ',
                           style: TextStyle(
@@ -1071,6 +762,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       height: 44,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
                         itemCount: favoriteRooms.length,
                         itemBuilder: (context, index) {
                           final fav = favoriteRooms[index];
@@ -1084,11 +776,16 @@ class _HomeScreenState extends State<HomeScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 8),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: AppColors.cardBg,
                                 borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+                                  width: 1.0,
+                                ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.03),
+                                    color: Colors.black.withValues(
+                                        alpha: isDark ? 0.25 : 0.03),
                                     blurRadius: 8,
                                     offset: const Offset(0, 2),
                                   ),
@@ -1096,12 +793,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.meeting_room_rounded,
+                                  Icon(Icons.meeting_room_rounded,
                                       size: 16, color: AppColors.purpleDeep),
                                   const SizedBox(width: 6),
                                   Text(
                                     fav.roomName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
                                       color: AppColors.textPrimary,
@@ -1117,12 +814,563 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 18),
                   ],
 
-                  const SizedBox(height: 80), // Padding for Floating Nav
+                  const SizedBox(height: 80),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Build the centerpiece card: either Create New Room or Rejoin Active Room
+  Widget _buildCreateOrRejoinCard(bool isDark) {
+    // ── REJOIN MODE ──
+    if (_hasActiveRoom && _activeRoomId != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [const Color(0xFF2D2010), const Color(0xFF22160A)]
+                : [const Color(0xFFFFF3CD), const Color(0xFFFFE8A1)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: isDark
+                ? const Color(0xFF6B4810)
+                : const Color(0xFFFFC67D),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.orange.withValues(alpha: isDark ? 0.2 : 0.15),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.35)
+                        : Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFF8A00),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'ห้องเดิมยังเปิดอยู่',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isDark
+                              ? const Color(0xFFFFC67D)
+                              : const Color(0xFF856404),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                // Dismiss / Cancel active room
+                InkWell(
+                  onTap: _dismissActiveRoom,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 9, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.35)
+                          : Colors.white.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.close_rounded,
+                            size: 13,
+                            color: isDark
+                                ? const Color(0xFFFFC67D)
+                                : const Color(0xFF856404)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'ยกเลิกห้อง',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isDark
+                                ? const Color(0xFFFFC67D)
+                                : const Color(0xFF856404),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'กลับห้องเดิมของคุณ',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: isDark
+                    ? const Color(0xFFFFF3CD)
+                    : const Color(0xFF5A3E00),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.meeting_room_rounded,
+                    size: 14,
+                    color: isDark
+                        ? const Color(0xFFFFE0B2)
+                        : const Color(0xFF856404)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Room ID: $_activeRoomId'
+                        '${_countdownRemaining > 0 ? '  •  หมดเวลาใน ${_countdownRemaining}s' : ''}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFFFE0B2)
+                          : const Color(0xFF856404),
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFF8A00),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+                onPressed: () {
+                  _countdownTimer?.cancel();
+                  _enterRoom(roomId: _activeRoomId!);
+                },
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.login_rounded,
+                        color: Colors.white, size: 20),
+                    SizedBox(width: 6),
+                    Text(
+                      'กลับเข้าห้องเดิมทันที',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Center(
+              child: TextButton.icon(
+                onPressed: _dismissActiveRoom,
+                icon: Icon(Icons.add_circle_outline_rounded,
+                    size: 15,
+                    color: isDark
+                        ? const Color(0xFFFFC67D)
+                        : const Color(0xFF856404)),
+                label: Text(
+                  'ต้องการสร้างห้องใหม่แทนห้องเดิม',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: isDark
+                        ? const Color(0xFFFFC67D)
+                        : const Color(0xFF856404),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ── CREATE NEW ROOM MODE ──
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF241F3A), const Color(0xFF1B172C)]
+              : [const Color(0xFFD6C5FC), const Color(0xFFFFE3D1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: isDark ? const Color(0xFF3B3356) : Colors.transparent,
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.purpleDeep.withValues(
+                alpha: isDark ? 0.15 : 0.2),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF151322)
+                      : Colors.white.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'สร้างห้องใหม่',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.purpleDeep,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              // Lock toggle button
+              InkWell(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() {
+                    _isRoomLocked = !_isRoomLocked;
+                  });
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _isRoomLocked
+                        ? AppColors.pinkDeep
+                        : (isDark ? const Color(0xFF151322) : Colors.white),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isRoomLocked
+                            ? Icons.lock_rounded
+                            : Icons.lock_open_rounded,
+                        size: 13,
+                        color: _isRoomLocked
+                            ? Colors.white
+                            : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isRoomLocked ? 'ล็อค PIN' : 'ห้องสาธารณะ',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _isRoomLocked
+                              ? Colors.white
+                              : AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // Randomize Room Name
+              InkWell(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  _generateRandomRoom();
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF151322) : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.shuffle_rounded,
+                          size: 13, color: AppColors.purpleDeep),
+                      const SizedBox(width: 4),
+                      Text(
+                        'สุ่มชื่อ',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.purpleDeep,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'เริ่มปาร์ตี้ดูคลิปด้วยกัน',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'ส่งชื่อห้องให้เพื่อน แล้วเข้ามาดูคลิปพร้อมกันได้ทันที',
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark
+                  ? AppColors.textSecondary
+                  : const Color(0xFF5A4D78),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Room Name TextField
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF12101E) : Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark ? const Color(0xFF2E2844) : Colors.transparent,
+                width: 1.0,
+              ),
+            ),
+            child: TextField(
+              controller: _createRoomController,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText: 'ตั้งชื่อหรือรหัสห้อง',
+                hintStyle: TextStyle(color: AppColors.textMuted),
+                border: InputBorder.none,
+                icon: Icon(Icons.meeting_room_rounded,
+                    color: AppColors.purpleDeep, size: 20),
+              ),
+            ),
+          ),
+
+          // Optional YouTube URL TextField
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF12101E) : Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: isDark ? const Color(0xFF2E2844) : Colors.transparent,
+                width: 1.0,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _videoUrlController,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'ลิงก์ YouTube ที่ต้องการเปิดเลย (ทางเลือก)',
+                      hintStyle: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                      border: InputBorder.none,
+                      icon: Icon(
+                        Icons.link_rounded,
+                        color: AppColors.orangeDeep,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () async {
+                    HapticFeedback.lightImpact();
+                    final data = await Clipboard.getData(Clipboard.kTextPlain);
+                    if (data?.text != null && data!.text!.trim().isNotEmpty) {
+                      setState(() {
+                        _videoUrlController.text = data.text!.trim();
+                      });
+                      Fluttertoast.showToast(msg: 'วางลิงก์แล้ว');
+                    } else {
+                      Fluttertoast.showToast(msg: 'คลิปบอร์ดว่างเปล่า');
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 8),
+                    child: Text(
+                      'วาง',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.orangeDeep,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Optional PIN field if locked
+          if (_isRoomLocked) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF12101E) : Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2E2844) : Colors.transparent,
+                  width: 1.0,
+                ),
+              ),
+              child: TextField(
+                controller: _pinController,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.pinkDeep,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'ตั้งรหัสผ่าน PIN (ตัวเลข 4-6 หลัก)',
+                  hintStyle: TextStyle(
+                      fontSize: 12, color: AppColors.textMuted),
+                  border: InputBorder.none,
+                  counterText: '',
+                  icon: Icon(Icons.key_rounded,
+                      color: AppColors.pinkDeep, size: 18),
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? AppColors.purpleDeep : AppColors.darkNav,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              onPressed: () {
+                final rid = _createRoomController.text.trim();
+                final pin = _pinController.text.trim();
+                if (_isRoomLocked && pin.isEmpty) {
+                  Fluttertoast.showToast(
+                      msg: 'กรุณาตั้งรหัสผ่าน PIN สำหรับห้องล็อค');
+                  return;
+                }
+
+                // Extract optional YouTube Video ID
+                String initialVideoId = '';
+                final rawUrl = _videoUrlController.text.trim();
+                if (rawUrl.isNotEmpty) {
+                  final extracted = UrlHelper.extractYouTubeId(rawUrl);
+                  if (extracted != null) {
+                    initialVideoId = extracted;
+                  } else {
+                    Fluttertoast.showToast(msg: 'ลิงก์ YouTube ไม่ถูกต้อง จะสร้างห้องเปล่า');
+                  }
+                }
+
+                _enterRoom(
+                  roomId: rid,
+                  isLocked: _isRoomLocked,
+                  password: pin,
+                  initialVideoId: initialVideoId,
+                );
+              },
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.play_arrow_rounded,
+                      color: Colors.white, size: 20),
+                  SizedBox(width: 6),
+                  Text(
+                    'สร้างห้อง & เริ่มเล่นเลย',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

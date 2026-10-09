@@ -1,27 +1,75 @@
 # 🎬 ยูซิงค์ (U-Sync) - Real-time YouTube Watch Party App
 
 <p align="center">
-  <b>แอปพลิเคชันมือถือ (Android APK) สำหรับดูวิดีโอ YouTube พร้อมกันแบบ Real-time</b><br>
+  <img src="https://raw.githubusercontent.com/ZXD44/U-Sync/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="96" height="96" alt="U-Sync Logo"><br>
+  <b>แอปพลิเคชันมือถือ (Android APK) สำหรับดูคลิปและฟังเพลง YouTube พร้อมกันแบบ Real-time</b><br>
   สตรีมภาพและเสียงตรงจาก YouTube CDN และซิงค์สถานะการเล่นระดับเสี้ยววินาทีผ่าน <b>Firebase Realtime Database</b><br>
-  ดีไซน์สไตล์ <b>Neo-Pastel Bento Grid</b> ทันสมัย คลีนตา และใช้งานง่าย
+  ดีไซน์สไตล์ <b>Neo-Pastel Bento Grid</b> รองรับทั้ง <b>Light Mode</b> และ <b>Dark Mode</b> สวยงาม ลื่นไหล และประหยัดแบตเตอรี่
 </p>
 
 ---
 
-## 📱 ข้อมูล Release APK
+## 📱 ข้อมูล Release APK ล่าสุด
 
 * 📍 **โฟลเดอร์เก็บไฟล์:** `/home/zirconx/Documents/U-Sync/release/`
-* 📱 **ไฟล์ APK ล่าสุด:** [U-Sync.apk](file:///home/zirconx/Documents/U-Sync/release/U-Sync.apk)
-* 📱 **ชื่อแอปบนเครื่อง Android:** **ยูซิงค์**
-* ⚡ **สคริปต์คอมไพล์ & ติดตั้ง:** `./build_apk.sh --install`
+* 📦 **ขนาดไฟล์ APK:** **~34.5 MB** (ลดขนาดลง 37.5% ด้วย R8 ProGuard Shrinking + ABI Filtering)
+* 📱 **สถาปัตยกรรม:** ARM64-v8a + ARMv7 (รองรับมือถือ Android ทุกรุ่น)
+* 🏷️ **เวอร์ชันล่าสุด:** **v1.0.6**
+* 🚀 **ลิงก์ดาวน์โหลด GitHub Release:** [ZXD44/U-Sync Releases](https://github.com/ZXD44/U-Sync/releases)
+* ⚡ **สคริปต์คอมไพล์ & ปล่อยเวอร์ชัน:** `./build_apk.sh`
 
 ---
 
-## 🏗️ สถาปัตยกรรมระบบ (System Architecture & Project Structure)
+## 🌟 ฟังก์ชันและฟีเจอร์เด่น (Key Features)
+
+### 1. ⏱️ ระบบซิงค์วิดีโอแบบไร้รอยต่อ (NTP Server Time Compensation)
+* คำนวณเวลาจริงของเซิร์ฟเวอร์ด้วย `.info/serverTimeOffset`
+* เมื่อคลิปกำลังเล่น จะคำนวณตำแหน่งเวลาเป้าหมาย:
+  $$\text{Target Time} = \text{currentTime} + \left(\frac{\text{ServerNow} - \text{timestamp}}{1000}\right) \times \text{playbackRate}$$
+* **Continuous Timeline (เวลาไม่เคยหยุด):** เมื่อพับแอป ดับหน้าจอ หรือออกจากห้องชั่วคราว วิดีโอจะยังคงเดินหน้าต่อไปตามเวลาจริง เมื่อกลับเข้าห้องใหม่จะเล่นต่อทันทีโดยไม่ต้องเริ่มใหม่
+
+### 2. 🛡️ จำกัด 1 คน ต่อ 1 ห้อง (Strict 1 Room Per Device Policy)
+* ผู้ใช้แต่ละเครื่องสามารถเป็นเจ้าของห้องได้สูงสุด 1 ห้องในเวลาเดียวกัน
+* เมื่อสร้างห้องใหม่ ระบบจะลบห้องเก่าที่เคยสร้างไว้ออกทันทีเพื่อป้องกันห้องค้างและลดภาระเซิร์ฟเวอร์
+* มีปุ่ม **"ต้องการสร้างห้องใหม่แทนห้องเดิม"** ในหน้าแรกสำหรับสลับห้องได้ทันที
+
+### 3. ⏳ ระบบนับถอยหลังลบห้องว่าง 10 วินาที (10s Auto-Purge)
+* เมื่อสมาชิกทุกคนออกจากห้อง (`0 คนออนไลน์`) ระบบจะเริ่มนับถอยหลัง 10 วินาที
+* หากมีคนกลับเข้าห้องภายใน 10 วินาที ระบบจะยกเลิกการลบและใช้งานต่อได้ทันที
+* ช่วยให้ฐานข้อมูล Firebase คลีน รวดเร็ว และไม่แลค
+
+### 4. 🌙 รองรับ Light & Dark Mode สมบูรณ์แบบ (Dynamic Theme Engine)
+* สลับโหมดสว่าง / โหมดมืดได้ทันทีผ่านปุ่ม Toggle ในหน้าโปรไฟล์
+* **Light Mode:** โทนสีพาสเทล Neo-Pastel สดใส สบายตา
+* **Dark Mode:** โทนสี Deep Slate / Dark Purple คมชัด ไม่แสบตา และประหยัดแบตเตอรี่หน้าจอ OLED
+
+### 5. 📴 รองรับการฟังเพลงตอนดับหน้าจอ (Screen-off Resilience)
+* เพิ่มสิทธิ์ `FOREGROUND_SERVICE` และ `FOREGROUND_SERVICE_MEDIA_PLAYBACK`
+* ดักจับวงจรชีวิตแอปด้วย `WidgetsBindingObserver` เมื่อผู้ใช้ล็อกหน้าจอมือถือ ระบบจะไม่ส่งคำสั่ง Pause ไปยังเซิร์ฟเวอร์ และจะ Re-sync เวลาให้ทันทีเมื่อเปิดจอกลับมา
+
+### 6. 🔲 โหมดหน้าต่างลอย (Picture-in-Picture / PiP)
+* รองรับหน้าต่างลอยขนาด 16:9 ขณะสลับไปใช้งานแอปพลิเคชันอื่น
+* มีปุ่มย่อเป็นหน้าต่างลอยได้ทันทีในหน้าห้องดูคลิป
+
+### 7. 📲 ระบบอัปเดตแอปอัตโนมัติในตัว (In-App Self-Updater)
+* ตรวจสอบ Release ล่าสุดจาก GitHub API อัตโนมัติ
+* แสดง Changelog รายละเอียดการอัปเดต ดาวน์โหลดไฟล์ APK และเปิดหน้าจอติดตั้งผ่าน Android `FileProvider` ได้ทันที
+
+### 8. 🔍 ค้นหาคลิป YouTube ในแอป (Live YouTube Search)
+* ค้นหาคลิปด้วยคีย์เวิร์ดหรือวางลิงก์ YouTube (Desktop, Mobile, Shorts, Video ID)
+* เพิ่มคลิปเข้าคิวส่วนกลาง (`Playlist Queue`) พร้อมระบบเล่นคลิปถัดไปอัตโนมัติ
+
+### 9. 💬 แชทสด & ส่ง Reaction เด้งลอย (Live Chat & Emoji Reactions)
+* แชทสดแบบเรียลไทม์ (จำกัด 50 ข้อความล่าสุด ป้องกันแรมบวม)
+* กดส่ง Reaction (❤️, 🍿, 😂, 🔥, 👏, 😭, 🎬, ✨) แอนิเมชันเด้งลอยทะลุจอพร้อม Haptic Feedback
+
+---
+
+## 🏗️ โครงสร้างโปรเจกต์ (Project Structure)
 
 ```
 lib/
-├── main.dart                          # จุดเริ่มต้นแอป, Firebase Init, Tab Navigation (4 Tabs)
+├── main.dart                          # จุดเริ่มต้นแอป, Firebase Init, Navigation Tabs (4 แท็บ)
 ├── theme/
 │   └── app_theme.dart                 # Neo-Pastel Design Tokens, Colors, Gradients, Typography
 ├── models/
@@ -32,18 +80,21 @@ lib/
 │   ├── room_reaction.dart             # อีโมจิลอย (emoji, sender, senderName, timestamp)
 │   └── queue_item.dart                # ข้อมูลคิววิดีโอ (id, videoId, title, addedBy, addedAt)
 ├── services/
-│   ├── firebase_sync_service.dart     # หัวใจหลัก: จัดการ Realtime DB, ซิงค์เวลา, Presence, 30s Countdown, Owner Reclaim
+│   ├── firebase_sync_service.dart     # หัวใจหลัก: จัดการ Realtime DB, ซิงค์เวลา, Presence, 10s Countdown, Owner Reclaim
+│   ├── theme_service.dart             # จัดการ Light/Dark Mode Persistence ผ่าน SharedPreferences
+│   ├── update_service.dart            # ระบบตรวจสอบและอัปเดตแอปผ่าน GitHub Releases
 │   ├── youtube_search_service.dart    # ดึงผลค้นหาคลิป YouTube สด & แปลง URL
 │   ├── stats_service.dart             # สถิติการใช้งานจริง, เวลารวม, กราฟสัปดาห์, อวตาร
 │   ├── favorites_service.dart         # บันทึกห้องโปรด (SharedPreferences)
+│   ├── pip_service.dart               # จัดการ Picture-in-Picture Platform Channel
 │   ├── device_service.dart            # สร้างและจัดเก็บ Device UUID และชื่อเล่น
-│   └── url_helper.dart                # ดึง Video ID จากลิงก์ YouTube หลากหลายรูปแบบ
+│   └── url_helper.dart                # ดึง Video ID จากลิงก์ YouTube ทุกประเภท
 ├── screens/
-│   ├── home_screen.dart               # แท็บ 1: เมนูหลัก, สร้างห้อง, เข้าห้อง, Rejoin Banner, ห้องโปรด
-│   ├── rooms_browser_screen.dart      # แท็บ 2: รายการห้องสด, ตัวนับถอยหลังลบห้อง, ค้นหา/กรอง
+│   ├── home_screen.dart               # แท็บ 1: เมนูหลัก, สร้างห้อง, สลับห้องเดิม, หมวดหมู่ยอดนิยม, ห้องโปรด
+│   ├── rooms_browser_screen.dart      # แท็บ 2: รายการห้องสด, แถบ Rejoin ด่วน, ค้นหา/กรองห้อง
 │   ├── stats_screen.dart              # แท็บ 3: สถิติดูจริง, กราฟสัปดาห์, ประวัติดู
-│   ├── profile_screen.dart            # แท็บ 4: เปลี่ยนชื่อ, เลือก 12 อวตาร, เครดิต ZirconX
-│   └── watch_party_screen.dart        # หน้าห้องฉาย: เครื่องเล่น YouTube, แชท, คิวคลิป, สมาชิก, อิโมจิ
+│   ├── profile_screen.dart            # แท็บ 4: เปลี่ยนชื่อ, สลับธีมมืด/สว่าง, เลือก 12 อวตาร, เครดิต ZirconX
+│   └── watch_party_screen.dart        # หน้าห้องฉาย: เครื่องเล่น YouTube, แชท, คิวคลิป, สมาชิก, อิโมจิ, ซับไทย
 └── widgets/
     ├── sync_status_badge.dart         # ป้ายแสดงสถานะการเชื่อมต่อ & ปิง
     ├── floating_reactions.dart        # แอนิเมชันอีโมจิลอยทะลุจอ
@@ -53,8 +104,6 @@ lib/
 ---
 
 ## 🗄️ โครงสร้างฐานข้อมูล Firebase Realtime Database (RTDB Schema)
-
-โครงสร้างฐานข้อมูลเก็บอยู่ที่ `rooms/{roomId}/` ดังนี้:
 
 ```json
 {
@@ -66,13 +115,13 @@ lib/
         "currentTime": 45.2,          // วินาทีที่เริ่มเล่น/หยุด
         "playbackRate": 1.0,
         "updatedBy": "<deviceId>",
-        "timestamp": 1740000000000,    // Firebase Server Timestamp
+        "timestamp": 1740000000000,    // Firebase Server Timestamp (มิลลิวินาที)
         "roomName": "ห้องดูหนังวันหยุด",
         "hostId": "<deviceId>",       // หัวห้องปัจจุบัน (สามารถโอนได้)
         "ownerId": "<deviceId>",      // เจ้าของห้องตัวจริง (ถาวร ไม่เปลี่ยน)
         "isLocked": false,
         "password": "",
-        "deleteAt": 1740000030000      // (Optional) เวลาที่จะถูกลบ ถ้าห้องว่าง (30 วินาที)
+        "deleteAt": 1740000010000      // (Optional) เวลาที่จะถูกลบถ้าห้องว่าง (10 วินาที)
       },
       "members": {
         "<deviceId>": {
@@ -111,85 +160,24 @@ lib/
 
 ---
 
-## 🌟 ฟังก์ชันและระบบการทำงานหลัก (Key Mechanisms)
+## 🚀 วิธีการใช้งานสคริปต์ Build & Release (`build_apk.sh`)
 
-### 1. 🛡️ ระบบจดจำเจ้าของห้อง & สิทธิ์หัวห้อง (Owner vs Host)
-* **`ownerId` (เจ้าของห้องถาวร):** บันทึกรหัสเครื่องของผู้สร้างห้อง ไม่มีวันเปลี่ยนแปลง
-* **`hostId` (หัวห้องปฏิบัติการ):** ควบคุมการเล่น/ตั้งรหัสผ่าน หากหัวห้องหลุด จะโอนให้สมาชิกคนถัดไปชั่วคราว
-* **Owner Reclaim:** เมื่อเจ้าของห้องตัวจริง (`ownerId`) กลับเข้ามาในห้อง ระบบจะ**คืนสิทธิ์หัวห้องให้เจ้าของห้องทันทีโดยอัตโนมัติ**
+สคริปต์แบบ Interactive จัดการทุกกระบวนการในคำสั่งเดียว:
 
-### 2. ⏳ ระบบนับถอยหลัง 50 วินาทีก่อนลบห้อง (50s Room Deletion Delay)
-* เมื่อสมาชิกทุกคนออกจากห้อง (`0 คนออนไลน์`) ห้องจะไม่ถูกลบทันที
-* ระบบจะเริ่มนับถอยหลัง 50 วินาที พร้อมเขียน `deleteAt` ลงฐานข้อมูล
-* **Rejoin Cancellation:** หากมีผู้ใช้หรือเจ้าของกลับเข้ามาภายใน 50 วินาที → ระบบจะ**ยกเลิกการลบทันที** และห้องจะใช้งานต่อได้ตามปกติ
-* แสดงตัวนับถอยหลังแบบเรียลไทม์ทั้งในหน้าแรก (`HomeScreen`) และหน้าสำรวจห้อง (`RoomsBrowserScreen`)
+```bash
+# เปิดเมนูหลัก
+./build_apk.sh
 
-### 3. 🚫 ระบบป้องกันการสร้างห้องซ้ำซ้อน (Rejoin Active Room Protection)
-* หากผู้ใช้มีห้องเดิมที่ยังไม่หมดเวลา 50 วินาที ระบบจะล็อกไม่ให้สร้างห้องใหม่เพื่อป้องกันเซิร์ฟเวอร์โหลดเกินและอาการกระตุก
-* แสดงแบนเนอร์สีทองบนหน้าแรก แจ้งเตือนเวลาที่เหลือพร้อมปุ่ม **"กลับเข้าห้องเดิม"**
-
-### 4. ⏱️ การคำนวณชดเชยดีเลย์เน็ตเวิร์ก (Latency Compensation)
-* คำนวณเวลาจริงของเซิร์ฟเวอร์ด้วย `.info/serverTimeOffset`
-* เมื่อคลิปกำลังเล่น จะคำนวณตำแหน่งเวลาเป้าหมาย:
-  $$\text{Target Time} = \text{currentTime} + \left(\frac{\text{ServerNow} - \text{timestamp}}{1000}\right) \times \text{playbackRate}$$
-* ซิงค์ให้ทุกเครื่องดูตรงกันระดับเสี้ยววินาที
-
-### 5. 🔍 ระบบค้นหาคลิป YouTube ในแอป (Live YouTube Search)
-* พิมพ์ค้นหาด้วยชื่อเพลง, ชื่อคลิป หรือศิลปิน มีระบบ Scrape ดึงผลการค้นหาสดพร้อมภาพปกและชื่อคลิป
-* รองรับการวางลิงก์ YouTube ทุกประเภท (Desktop, Mobile, Shorts, Live Stream, ID 11 หลัก)
-
-### 6. 📑 คิวคลิปวิดีโอ & เล่นต่อเนื่อง (Playlist Queue & Auto-Advance)
-* สมาชิกทุกคนสามารถกดเพิ่มคลิปเข้าคิวส่วนกลางได้
-* เมื่อคลิปปัจจุบันเล่นจบ (`PlayerState.ended`) ตัวเล่นจะดึงคลิปแรกในคิวขึ้นมาเล่นต่อให้ทุกคนในห้องโดยอัตโนมัติ
-
-### 7. ⭐ บันทึกห้องโปรด (Favorite Rooms)
-* บันทึกห้องที่ชอบลงในเครื่องผ่าน `FavoritesService`
-* แสดงในแถบแนวนอนบนหน้าแรก กดเข้าห้องได้ทันที
-
-### 8. 💬 แชทสด & อีโมจิลอย (Reactions & Chat)
-* ส่งข้อความแชทสดเก็บประวัติ 50 ข้อความล่าสุด
-* ส่ง Reaction (❤️, 🍿, 😂, 🔥, 👏, 😭, 🎬, ✨) เด้งแอนิเมชันลอยบนจอพร้อม Haptic Feedback
-
-### 9. 📊 สถิติการใช้งานจริง 100% (Real Analytics)
-* นับเวลาดูสะสมจริงวินาทีต่อวินาทีขณะที่วิดีโอกำลังเล่น
-* กราฟแท่งแสดงสถิติการดูแยกรายวันในสัปดาห์ (จันทร์ - อาทิตย์)
-* ประวัติการดูคลิปล่าสุด (Watch History)
-
-### 10. 🔒 โหมดรับชมสำหรับผู้ชมทั่วไป (Viewer Mode Lock)
-* สมาชิกทั่วไปที่ไม่ใช่หัวห้องจะไม่สามารถกดข้าม (Seek), กรอคลิป (Fast-forward) หรือกดหยุด (Pause) ได้
-* มีตัวป้องกันการสัมผัส (Lock Overlay) บนเครื่องเล่นวิดีโอเพื่อรักษาการซิงค์มุมมองให้อ้างอิงตามหัวห้อง 100%
-* สมาชิกทั่วไปสามารถแนะนำคลิปเข้าคิว (`+เพิ่มคิวคลิป`) ได้ แต่สิทธิ์การเล่น/เปลี่ยนคลิปทันทีจะสงวนให้หัวห้อง
-
-### 11. 🔄 ระบบรีเฟรช & ซิงค์อัตโนมัติเมื่อสมาชิกเข้าใหม่ (Auto-Sync on Join & Drift Guard)
-* เมื่อสมาชิกใหม่เข้าห้อง ระบบจะดึงสถานะล่าสุด (`fetchLatestState`) ทันที พร้อมคำนวณตำแหน่งเวลาเป้าหมายและสั่ง Seek อัตโนมัติ
-* มี **Auto-Sync Guard** คอยตรวจจับการคลาดเคลื่อนของเวลา (Drift Check ทุกๆ 2 วินาที) หากเวลาคลาดเคลื่อนเกิน 1 วินาที ระบบจะปรับเวลากลับมาให้ตรงกับหัวห้องโดยอัตโนมัติ
-
-### 12. 🔐 ระบบล็อคห้องส่วนตัวสงวนเฉพาะหัวห้อง (Host-Only Room Lock)
-* สิทธิ์การตั้งค่าล็อคห้องและเปลี่ยนรหัสผ่านจะเข้าถึงได้เฉพาะหัวห้อง (`hostId == myDeviceId`) เท่านั้น
-* ระบบมี Backend Guard ใน `FirebaseSyncService.toggleRoomLock` ตรวจสอบสิทธิ์กับฐานข้อมูลก่อนบันทึกทุกครั้ง ป้องกันการเข้าถึงโดยไม่ได้รับอนุญาต
-
-### 13. 🔲 เล่นวิดีโอแบบหน้าต่างลอย & พื้นหลัง (Picture-in-Picture / Auto-PiP)
-* รองรับโหมดหน้าต่างลอย **Picture-in-Picture (PiP)**: เมื่ออยู่ในห้องดูคลิปแล้วปัดแอปไปหน้าโฮม หรือสลับไปใช้แอปอื่น (เช่น Line, Facebook) วิดีโอและเสียงจะเล่นต่อเนื่องอัตโนมัติบนหน้าต่างลอยขนาด 16:9
-* มีปุ่มไอคอนหน้าต่างลอย 🔲 บนแถบเมนูในห้องดูคลิป ให้สามารถกดย่อเป็นหน้าต่างลอยได้ทันทีด้วยตนเอง
-
-### 14. 👤 โปรไฟล์ & เลือก 12 อวตาร (Profile Customization)
-* เปลี่ยนชื่อเล่นที่จะแสดงในห้องแชทและรายชื่อสมาชิก
-* เลือกภาพอวตารอีโมจิ 12 รูปแบบที่ชอบ
+# หรือเรียกใช้งานแบบด่วนด้วย Flag
+./build_apk.sh --build    # คอมไพล์ APK ลง release/U-Sync.apk
+./build_apk.sh --install  # คอมไพล์และติดตั้งลงมือถือผ่าน USB ADB
+./build_apk.sh --github   # สร้างและอัปโหลดขึ้น GitHub Release พร้อมกรอก Release Notes
+./build_apk.sh --all      # ทำครบทุกขั้นตอน (Build + GitHub + Install)
+```
 
 ---
 
-## 🧭 การทำงานของ 4 แท็บเมนูหลัก (Navigation Tabs)
-
-| แท็บ | หน้า | รายละเอียดการทำงาน |
-| :--- | :--- | :--- |
-| 🏠 **แท็บ 1** | `HomeScreen` | เมนูหลัก, สร้างห้องด่วน (สุ่มชื่อ), เข้าห้องด้วยรหัส, Rejoin Banner (นับถอยหลัง 50s), แถบห้องโปรด ⭐, หมวดหมู่แนะนำ |
-| 🌐 **แท็บ 2** | `RoomsBrowserScreen` | สำรวจห้องปาร์ตี้ทั้งหมดแบบเรียลไทม์, ตัวนับถอยหลัง 50s ของห้องที่กำลังจะถูกลบ, ค้นหา/กรองห้องสาธารณะ/ล็อค |
-| 📊 **แท็บ 3** | `StatsScreen` | สถิติเวลาดูรวมจริง, จำนวนคลิป, Reactions, กราฟสัปดาห์, ประวัติการดูล่าสุด |
-| ⚙️ **แท็บ 4** | `ProfileScreen` | แก้ไขชื่อเล่น & เลือก 12 อวตาร, ข้อมูล UUID ประจำเครื่อง, เปิด/ปิดเสียงเอฟเฟกต์, เครดิต ZirconX |
-
----
-
-## 🛠️ รายการ Dependencies สำคัญ
+## 🛠️ รายการ Dependencies หลัก
 
 ```yaml
 dependencies:
@@ -198,10 +186,11 @@ dependencies:
   firebase_core: ^3.15.2
   firebase_database: ^11.3.10
   youtube_player_flutter: ^9.1.3
+  wakelock_plus: ^1.2.10
   shared_preferences: ^2.3.5
   http: ^1.2.2
-  wakelock_plus: ^1.2.10
   fluttertoast: ^8.2.14
+  uuid: ^4.5.1
 ```
 
 ---
@@ -210,4 +199,5 @@ dependencies:
 
 * **ผู้พัฒนา:** **ZirconX**
 * **โปรเจกต์:** U-Sync (ยูซิงค์)
+* **เวอร์ชัน:** 1.0.4
 * **ปีที่พัฒนา:** 2026

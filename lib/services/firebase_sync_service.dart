@@ -13,8 +13,8 @@ class FirebaseSyncService {
   static const String _dbUrl =
       'https://usync-e85a4-default-rtdb.firebaseio.com';
 
-  /// Countdown duration before an empty room gets deleted (seconds)
-  static const int roomDeletionCountdownSeconds = 30;
+  /// Countdown duration before an empty room gets deleted (seconds) - reduced to 10s for fast cleanup
+  static const int roomDeletionCountdownSeconds = 10;
 
   final FirebaseDatabase _db = FirebaseDatabase.instanceFor(
     app: Firebase.app(),
@@ -81,6 +81,29 @@ class FirebaseSyncService {
     return DateTime.now().millisecondsSinceEpoch + _serverTimeOffset;
   }
 
+  /// Clean up any previous rooms owned or hosted by this device (Strict limit: 1 room per user)
+  Future<void> cleanOldRoomsForDevice(String deviceId, {String? exceptRoomId}) async {
+    try {
+      final snap = await _db.ref('rooms').get();
+      if (snap.exists && snap.value is Map) {
+        final roomsMap = snap.value as Map;
+        for (final entry in roomsMap.entries) {
+          final rid = entry.key.toString();
+          if (exceptRoomId != null && rid == exceptRoomId) continue;
+          if (entry.value is Map) {
+            final rData = entry.value as Map;
+            final state = rData['state'] as Map?;
+            final ownerId = state?['ownerId']?.toString();
+            final hostId = state?['hostId']?.toString();
+            if (ownerId == deviceId || hostId == deviceId) {
+              await deleteRoomImmediately(rid);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   /// Check if a room still exists and has the deletion countdown field
   Future<bool> isRoomAlive(String roomId) async {
     try {
@@ -140,7 +163,7 @@ class FirebaseSyncService {
               if (info.deleteAt > 0 && info.deleteAt <= now) {
                 _executeRoomDeletion(roomId.toString());
               } else {
-                // Start countdown if not already started
+                // Start 10-second countdown if not already started
                 _startDeletionCountdown(roomId.toString());
                 if (_pendingDeletionTimers.containsKey(roomId.toString())) {
                   rooms.add(info);
@@ -155,7 +178,7 @@ class FirebaseSyncService {
     });
   }
 
-  /// Start a 50-second countdown before deleting an empty room
+  /// Start a 10-second countdown before deleting an empty room
   void _startDeletionCountdown(String roomId) {
     // Don't start if already pending
     if (_pendingDeletionTimers.containsKey(roomId)) return;
@@ -214,29 +237,33 @@ class FirebaseSyncService {
   }
 
   /// Join a room & setup presence + streams
-  Future<void> joinRoom(
+  /// Join a room & setup presence + streams (Returns initial RoomState immediately)
+  Future<RoomState?> joinRoom(
     String roomId, {
     String roomName = '',
     bool isLocked = false,
     String password = '',
+    String initialVideoId = '',
   }) async {
     _currentRoomId = roomId;
     _lastActiveRoomId = roomId;
-
-    // Cancel any pending deletion for this room (user rejoined)
-    _cancelDeletionCountdown(roomId);
 
     final roomRef = _db.ref('rooms/$roomId');
     final memberRef = roomRef.child('members/$myDeviceId');
     final stateRef = roomRef.child('state');
 
+    // Cancel any pending deletion for this room immediately
+    _cancelDeletionCountdown(roomId);
+
+    RoomState? initialState;
+
     // 1. Initial State Check / Room Creation
     final stateSnapshot = await stateRef.get();
     if (!stateSnapshot.exists) {
       // Brand new room: this device is both owner and host
-      await stateRef.set({
-        'videoId': '',
-        'status': 'PAUSED',
+      final initialMap = {
+        'videoId': initialVideoId.trim(),
+        'status': initialVideoId.trim().isNotEmpty ? 'PLAYING' : 'PAUSED',
         'currentTime': 0.0,
         'playbackRate': 1.0,
         'updatedBy': myDeviceId,
@@ -246,26 +273,35 @@ class FirebaseSyncService {
         'ownerId': myDeviceId,
         'isLocked': isLocked,
         'password': password,
-      });
-    } else {
-      // Room exists — remove deleteAt if pending deletion
-      await stateRef.child('deleteAt').remove();
+      };
+      await stateRef.set(initialMap);
+      initialState = RoomState.fromMap(initialMap);
 
-      // If I am the original owner, reclaim host immediately
-      final stateMap = stateSnapshot.value as Map?;
-      final ownerId = stateMap?['ownerId']?.toString() ?? '';
-      if (ownerId == myDeviceId) {
-        await stateRef.update({'hostId': myDeviceId});
+      // Clean other rooms created by this user in background
+      cleanOldRoomsForDevice(myDeviceId, exceptRoomId: roomId);
+    } else {
+      // Room exists — remove deleteAt countdown immediately
+      stateRef.child('deleteAt').remove();
+
+      final stateMap = Map<String, dynamic>.from(stateSnapshot.value as Map);
+      final ownerId = stateMap['ownerId']?.toString() ?? '';
+
+      // Owner reclaim host priority: if I am the original owner, reclaim host immediately
+      if (ownerId == myDeviceId || stateMap['hostId'] == null || stateMap['hostId'] == '') {
+        stateMap['hostId'] = myDeviceId;
+        stateRef.update({'hostId': myDeviceId});
       }
+
+      initialState = RoomState.fromMap(stateMap);
     }
 
     // 2. Set Up Member Presence with onDisconnect
-    await memberRef.set({
+    memberRef.set({
       'nickname': DeviceService.getNickname(),
       'online': true,
       'lastSeen': ServerValue.timestamp,
     });
-    await memberRef.onDisconnect().update({
+    memberRef.onDisconnect().update({
       'online': false,
       'lastSeen': ServerValue.timestamp,
     });
@@ -288,7 +324,9 @@ class FirebaseSyncService {
       if (event.snapshot.exists && event.snapshot.value is Map) {
         final stateMap = event.snapshot.value as Map;
         final roomState = RoomState.fromMap(stateMap);
-        _stateController.add(roomState);
+        if (!_stateController.isClosed) {
+          _stateController.add(roomState);
+        }
       }
     });
 
@@ -309,7 +347,9 @@ class FirebaseSyncService {
           }
         });
       }
-      _membersController.add(members);
+      if (!_membersController.isClosed) {
+        _membersController.add(members);
+      }
 
       // Auto-migrate host if current host is offline
       _checkAndTransferHost(roomRef, members, firstOnlineMemberId);
@@ -319,8 +359,10 @@ class FirebaseSyncService {
     _reactionSubscription =
         roomRef.child('reaction').onValue.listen((event) {
       if (event.snapshot.exists && event.snapshot.value is Map) {
-        _reactionController
-            .add(RoomReaction.fromMap(event.snapshot.value as Map));
+        if (!_reactionController.isClosed) {
+          _reactionController
+              .add(RoomReaction.fromMap(event.snapshot.value as Map));
+        }
       }
     });
 
@@ -340,7 +382,9 @@ class FirebaseSyncService {
         });
         messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
       }
-      _messagesController.add(messages);
+      if (!_messagesController.isClosed) {
+        _messagesController.add(messages);
+      }
     });
 
     // 8. Listen to Video Playlist Queue
@@ -355,8 +399,12 @@ class FirebaseSyncService {
         });
         queue.sort((a, b) => a.addedAt.compareTo(b.addedAt));
       }
-      _queueController.add(queue);
+      if (!_queueController.isClosed) {
+        _queueController.add(queue);
+      }
     });
+
+    return initialState;
   }
 
   /// Auto transfer host: prioritize owner, then first online member
@@ -504,7 +552,7 @@ class FirebaseSyncService {
     return null;
   }
 
-  /// Calculate latency-compensated target playback time
+  /// Calculate latency-compensated target playback time (continuous timeline: never stops when PLAYING)
   double calculateCompensatedTime(RoomState state) {
     if (state.status != 'PLAYING') {
       return state.currentTime;
@@ -517,7 +565,7 @@ class FirebaseSyncService {
     final int now = currentServerTimestamp;
     final double elapsedSeconds = (now - state.timestamp) / 1000.0;
 
-    if (elapsedSeconds > 0 && elapsedSeconds < 3600) {
+    if (elapsedSeconds > 0) {
       return state.currentTime + (elapsedSeconds * state.playbackRate);
     }
 
@@ -535,7 +583,7 @@ class FirebaseSyncService {
           'lastSeen': ServerValue.timestamp,
         });
 
-        // Start 50-second countdown instead of immediate deletion
+        // Start 10-second countdown instead of immediate deletion
         _startDeletionCountdown(roomId);
       } catch (_) {}
     }

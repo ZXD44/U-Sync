@@ -134,7 +134,7 @@ class _FloatingReactionsOverlayState extends State<FloatingReactionsOverlay> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
+                    gradient: LinearGradient(
                       colors: [AppColors.orangeDeep, AppColors.pinkDeep],
                     ),
                     borderRadius: BorderRadius.circular(20),

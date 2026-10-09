@@ -16,13 +16,13 @@ class SyncStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Check partners
     final partnerEntries =
         members.entries.where((e) => e.key != myDeviceId).toList();
     final bool hasPartner = partnerEntries.isNotEmpty;
     final int onlineCount = members.values.where((m) => m.isOnline).length;
     final bool isPartnerOnline =
         hasPartner && partnerEntries.any((e) => e.value.isOnline);
+    final isDark = AppColors.isDark;
 
     String statusText;
     if (!hasPartner) {
@@ -39,11 +39,15 @@ class SyncStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+          width: 1.0,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -65,7 +69,7 @@ class SyncStatusBadge extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             statusText,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 12,
               fontWeight: FontWeight.bold,
@@ -73,7 +77,7 @@ class SyncStatusBadge extends StatelessWidget {
           ),
           if (isBuffering) ...[
             const SizedBox(width: 8),
-            const SizedBox(
+            SizedBox(
               width: 10,
               height: 10,
               child: CircularProgressIndicator(

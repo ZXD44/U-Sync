@@ -5,6 +5,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import '../theme/app_theme.dart';
 import '../models/room_info.dart';
 import '../services/firebase_sync_service.dart';
+import '../services/theme_service.dart';
 import 'watch_party_screen.dart';
 
 class RoomsBrowserScreen extends StatefulWidget {
@@ -19,9 +20,126 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
   final TextEditingController _searchController = TextEditingController();
   int _selectedFilter = 0; // 0 = ทั้งหมด, 1 = สาธารณะ, 2 = ล็อค
 
+  // Active room state for compact rejoin strip
+  bool _hasActiveRoom = false;
+  String? _activeRoomId;
+  int _countdownRemaining = 0;
+  Timer? _countdownTimer;
+  StreamSubscription? _activeRoomSubscription;
+  final FirebaseSyncService _rejoinSyncService = FirebaseSyncService();
+
+  @override
+  void initState() {
+    super.initState();
+    _checkActiveRoom();
+    ThemeService.isDarkModeNotifier.addListener(_onThemeChanged);
+  }
+
+  void _onThemeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _checkActiveRoom() {
+    _activeRoomSubscription?.cancel();
+    final lastRoom = FirebaseSyncService.lastActiveRoomId;
+    if (lastRoom == null || lastRoom.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _hasActiveRoom = false;
+          _activeRoomId = null;
+        });
+      }
+      return;
+    }
+
+    _activeRoomSubscription =
+        _rejoinSyncService.watchRoomExistence(lastRoom).listen((event) {
+      if (!event.snapshot.exists || event.snapshot.value == null) {
+        _countdownTimer?.cancel();
+        FirebaseSyncService.clearLastActiveRoom();
+        if (mounted) {
+          setState(() {
+            _hasActiveRoom = false;
+            _activeRoomId = null;
+            _countdownRemaining = 0;
+          });
+        }
+        return;
+      }
+
+      final data = event.snapshot.value as Map?;
+      final state = data?['state'] as Map?;
+      final deleteAt = (state?['deleteAt'] as num?)?.toInt() ?? 0;
+
+      if (deleteAt > 0) {
+        final now = _rejoinSyncService.currentServerTimestamp;
+        final remaining = ((deleteAt - now) / 1000).ceil();
+        if (remaining <= 0) {
+          _rejoinSyncService.deleteRoomImmediately(lastRoom);
+          _countdownTimer?.cancel();
+          FirebaseSyncService.clearLastActiveRoom();
+          if (mounted) {
+            setState(() {
+              _hasActiveRoom = false;
+              _activeRoomId = null;
+              _countdownRemaining = 0;
+            });
+          }
+        } else {
+          if (mounted) {
+            setState(() {
+              _hasActiveRoom = true;
+              _activeRoomId = lastRoom;
+              _countdownRemaining = remaining;
+            });
+          }
+          _startCountdownTicker();
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _hasActiveRoom = true;
+            _activeRoomId = lastRoom;
+            _countdownRemaining = 0;
+          });
+        }
+      }
+    });
+  }
+
+  void _startCountdownTicker() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_countdownRemaining <= 1) {
+        timer.cancel();
+        if (_activeRoomId != null) {
+          _rejoinSyncService.deleteRoomImmediately(_activeRoomId!);
+        }
+        FirebaseSyncService.clearLastActiveRoom();
+        if (mounted) {
+          setState(() {
+            _hasActiveRoom = false;
+            _activeRoomId = null;
+            _countdownRemaining = 0;
+          });
+        }
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _countdownRemaining--;
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
+    ThemeService.isDarkModeNotifier.removeListener(_onThemeChanged);
     _searchController.dispose();
+    _countdownTimer?.cancel();
+    _activeRoomSubscription?.cancel();
+    _rejoinSyncService.dispose();
     super.dispose();
   }
 
@@ -34,6 +152,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
     final cleanRoomId = roomId.trim();
     if (cleanRoomId.isEmpty) return;
 
+    _countdownTimer?.cancel();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -44,7 +163,12 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
           password: password,
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        setState(() {});
+        _checkActiveRoom();
+      }
+    });
   }
 
   void _showJoinLockedRoomDialog(RoomInfo room) {
@@ -52,21 +176,22 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
     showDialog(
       context: context,
       builder: (ctx) {
+        final isDark = AppColors.isDark;
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: AlertDialog(
-              backgroundColor: Colors.white,
+              backgroundColor: AppColors.cardBg,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(24)),
               title: Row(
                 children: [
-                  const Icon(Icons.lock_rounded, color: AppColors.orangeDeep),
+                  Icon(Icons.lock_rounded, color: AppColors.orangeDeep),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'ห้อง "${room.roomName}" ล็อคอยู่',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -79,7 +204,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     'กรุณากรอกรหัสผ่านเพื่อเข้าห้องนี้',
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 13),
@@ -88,13 +213,14 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                   TextField(
                     controller: pwdController,
                     obscureText: true,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w600),
                     decoration: InputDecoration(
                       hintText: 'รหัสผ่านห้อง',
+                      hintStyle: TextStyle(color: AppColors.textMuted),
                       filled: true,
-                      fillColor: AppColors.background,
+                      fillColor: isDark ? const Color(0xFF13121E) : AppColors.background,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                         borderSide: BorderSide.none,
@@ -106,12 +232,12 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('ยกเลิก',
+                  child: Text('ยกเลิก',
                       style: TextStyle(color: AppColors.textSecondary)),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.darkNav,
+                    backgroundColor: isDark ? AppColors.purpleDeep : AppColors.darkNav,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -141,10 +267,12 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = AppColors.isDark;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'สำรวจห้องปาร์ตี้',
           style: TextStyle(
             color: AppColors.textPrimary,
@@ -157,8 +285,79 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Search & Filter Box
-            // 🔍 Redesigned Modern Search Bar
+            // Compact Rejoin Active Room Strip
+            if (_hasActiveRoom && _activeRoomId != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 6, 18, 2),
+                child: GestureDetector(
+                  onTap: () {
+                    _countdownTimer?.cancel();
+                    _enterRoom(roomId: _activeRoomId!);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [const Color(0xFF2D2010), const Color(0xFF22160A)]
+                            : [const Color(0xFFFFF3CD), const Color(0xFFFFE8A1)],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF6B4810)
+                            : const Color(0xFFFFC67D),
+                        width: 1.0,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFF8A00),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'ห้องเดิม: $_activeRoomId'
+                                '${_countdownRemaining > 0 ? '  •  ${_countdownRemaining}s' : ''}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isDark
+                                  ? const Color(0xFFFFC67D)
+                                  : const Color(0xFF856404),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF8A00),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            'กลับห้องเดิม',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // Search Bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               child: Container(
@@ -166,7 +365,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                   color: AppColors.cardBg,
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(
-                    color: AppColors.isDark
+                    color: isDark
                         ? const Color(0xFF2E2B40)
                         : AppColors.purplePastel.withValues(alpha: 0.6),
                     width: 1.2,
@@ -174,7 +373,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(
-                          alpha: AppColors.isDark ? 0.25 : 0.04),
+                          alpha: isDark ? 0.25 : 0.04),
                       blurRadius: 14,
                       offset: const Offset(0, 4),
                     ),
@@ -190,7 +389,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                         color: AppColors.purplePastel.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.search_rounded,
                         color: AppColors.purpleDeep,
                         size: 20,
@@ -200,12 +399,12 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                     Expanded(
                       child: TextField(
                         controller: _searchController,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
                         ),
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'ค้นหาชื่อห้อง หรือรหัส Room ID...',
                           hintStyle: TextStyle(
                             color: AppColors.textMuted,
@@ -215,14 +414,14 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding:
-                              EdgeInsets.symmetric(vertical: 12),
+                              const EdgeInsets.symmetric(vertical: 12),
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
                     if (_searchController.text.isNotEmpty)
                       IconButton(
-                        icon: const Icon(Icons.cancel_rounded,
+                        icon: Icon(Icons.cancel_rounded,
                             size: 18, color: AppColors.textMuted),
                         onPressed: () {
                           HapticFeedback.lightImpact();
@@ -259,7 +458,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                 stream: _syncService.getPublicRooms(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
+                    return Center(
                       child: CircularProgressIndicator(
                           color: AppColors.purpleDeep),
                     );
@@ -293,15 +492,15 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                             Container(
                               width: 70,
                               height: 70,
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 color: AppColors.purplePastel,
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.meeting_room_outlined,
+                              child: Icon(Icons.meeting_room_outlined,
                                   size: 34, color: AppColors.purpleDeep),
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'ไม่พบห้องที่กำลังเปิดอยู่ในขณะนี้',
                               style: TextStyle(
                                 fontSize: 15,
@@ -310,7 +509,7 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
+                            Text(
                               'สร้างห้องใหม่ที่หน้าแรกเพื่อเริ่มดูคลิปพร้อมกันได้เลย',
                               style: TextStyle(
                                 fontSize: 12,
@@ -360,6 +559,8 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
 
   Widget _buildFilterChip(int index, String label, IconData icon) {
     final bool isSelected = _selectedFilter == index;
+    final isDark = AppColors.isDark;
+
     return GestureDetector(
       onTap: () {
         HapticFeedback.selectionClick();
@@ -369,32 +570,26 @@ class _RoomsBrowserScreenState extends State<RoomsBrowserScreen> {
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.darkNav : AppColors.cardBg,
+          color: isSelected
+              ? (isDark ? AppColors.purpleDeep : AppColors.darkNav)
+              : AppColors.cardBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected
-                ? AppColors.darkNav
-                : (AppColors.isDark
+                ? (isDark ? AppColors.purpleDeep : AppColors.darkNav)
+                : (isDark
                     ? const Color(0xFF2E2B40)
                     : AppColors.purplePastel.withValues(alpha: 0.5)),
             width: 1.2,
           ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                        alpha: AppColors.isDark ? 0.2 : 0.02),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(
+                  alpha: isSelected ? 0.2 : (isDark ? 0.25 : 0.02)),
+              blurRadius: isSelected ? 8 : 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -499,19 +694,23 @@ class _RoomCardState extends State<_RoomCard> {
     final room = widget.room;
     final bool isPlaying = room.status == 'PLAYING';
     final bool isPendingDeletion = _secondsRemaining > 0 && room.memberCount == 0;
+    final isDark = AppColors.isDark;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isPendingDeletion ? const Color(0xFFFFF8F0) : Colors.white,
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(22),
-        border: isPendingDeletion
-            ? Border.all(color: const Color(0xFFFFBB5C), width: 1.5)
-            : null,
+        border: Border.all(
+          color: isPendingDeletion
+              ? (isDark ? const Color(0xFF6E4515) : const Color(0xFFFFCC80))
+              : (isDark ? const Color(0xFF2B273D) : Colors.transparent),
+          width: 1.0,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.03),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -542,18 +741,46 @@ class _RoomCardState extends State<_RoomCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      room.roomName,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            room.roomName,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isPendingDeletion) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? const Color(0xFF3E2005)
+                                  : const Color(0xFFFFE0B2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'ลบใน ${_secondsRemaining}s',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFE65100),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
                       'Room ID: ${room.roomId}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         color: AppColors.textMuted,
                       ),
@@ -569,60 +796,20 @@ class _RoomCardState extends State<_RoomCard> {
                     color: AppColors.orangePastel,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Text(
+                  child: Text(
                     'มีรหัสผ่าน',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      color: Color(0xFF7F4F24),
+                      color: AppColors.orangeDeep,
                     ),
                   ),
                 ),
             ],
           ),
 
-          // ⏳ Countdown Banner
-          if (isPendingDeletion) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFFFE0B2), Color(0xFFFFCC80)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.timer_rounded,
-                      size: 16, color: Color(0xFFE65100)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'ห้องจะถูกลบใน $_secondsRemaining วินาที',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFFE65100),
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${_secondsRemaining}s',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFFE65100),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
           const SizedBox(height: 12),
-          const Divider(height: 1, color: Color(0xFFF4F0FA)),
+          Divider(height: 1, color: AppColors.divider),
           const SizedBox(height: 12),
 
           Row(
@@ -640,19 +827,19 @@ class _RoomCardState extends State<_RoomCard> {
               const SizedBox(width: 6),
               Text(
                 isPlaying ? 'กำลังเล่นวิดีโอ' : 'พักวิดีโอ',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textSecondary,
                 ),
               ),
               const SizedBox(width: 12),
-              const Icon(Icons.people_alt_rounded,
+              Icon(Icons.people_alt_rounded,
                   size: 14, color: AppColors.purpleDeep),
               const SizedBox(width: 4),
               Text(
                 '${room.memberCount} คนออนไลน์',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
@@ -663,7 +850,7 @@ class _RoomCardState extends State<_RoomCard> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: isPendingDeletion
                       ? const Color(0xFFE65100)
-                      : AppColors.darkNav,
+                      : (isDark ? AppColors.purpleDeep : AppColors.darkNav),
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
@@ -687,4 +874,3 @@ class _RoomCardState extends State<_RoomCard> {
     );
   }
 }
-

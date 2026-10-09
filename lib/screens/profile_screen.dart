@@ -6,6 +6,7 @@ import '../services/device_service.dart';
 import '../services/stats_service.dart';
 import '../services/favorites_service.dart';
 import '../services/update_service.dart';
+import '../services/theme_service.dart';
 import '../widgets/update_dialog.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -22,10 +23,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _nameController.text = DeviceService.getNickname();
+    ThemeService.isDarkModeNotifier.addListener(_onThemeChanged);
+  }
+
+  void _onThemeChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    ThemeService.isDarkModeNotifier.removeListener(_onThemeChanged);
     _nameController.dispose();
     super.dispose();
   }
@@ -39,17 +46,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) {
+        final isDark = AppColors.isDark;
+
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
             child: StatefulBuilder(
               builder: (context, setModalState) {
                 return AlertDialog(
-                  backgroundColor: Colors.white,
+                  backgroundColor: AppColors.cardBg,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(26),
                   ),
-                  title: const Text(
+                  title: Text(
                     'แก้ไขข้อมูลโปรไฟล์',
                     style: TextStyle(
                       color: AppColors.textPrimary,
@@ -78,7 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 14),
 
                         // Section 1: Choose Avatar
-                        const Text(
+                        Text(
                           'เลือกรูปโปรไฟล์อวตาร:',
                           style: TextStyle(
                             fontSize: 13,
@@ -111,7 +120,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? AppColors.purplePastel
-                                      : AppColors.background,
+                                      : (isDark
+                                          ? const Color(0xFF13121E)
+                                          : AppColors.background),
                                   shape: BoxShape.circle,
                                   border: isSelected
                                       ? Border.all(
@@ -130,7 +141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 16),
 
                         // Section 2: Edit Nickname
-                        const Text(
+                        Text(
                           'ชื่อเล่นของคุณ:',
                           style: TextStyle(
                             fontSize: 13,
@@ -141,15 +152,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 6),
                         TextField(
                           controller: nameFieldController,
-                          style: const TextStyle(
+                          style: TextStyle(
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.w600,
                             fontSize: 14,
                           ),
                           decoration: InputDecoration(
                             hintText: 'กรอกชื่อเล่นของคุณ',
+                            hintStyle: TextStyle(color: AppColors.textMuted),
                             filled: true,
-                            fillColor: AppColors.background,
+                            fillColor: isDark
+                                ? const Color(0xFF13121E)
+                                : AppColors.background,
                             contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 12),
                             border: OutlineInputBorder(
@@ -164,12 +178,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('ยกเลิก',
+                      child: Text('ยกเลิก',
                           style: TextStyle(color: AppColors.textSecondary)),
                     ),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.darkNav,
+                        backgroundColor:
+                            isDark ? AppColors.purpleDeep : AppColors.darkNav,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -201,14 +216,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) {
+        final isDark = AppColors.isDark;
+
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: AlertDialog(
-              backgroundColor: Colors.white,
+              backgroundColor: AppColors.cardBg,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(24)),
-              title: const Text(
+              title: Text(
                 'ข้อมูลอุปกรณ์ของคุณ',
                 style: TextStyle(
                   color: AppColors.textPrimary,
@@ -220,7 +237,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'รหัสประจำเครื่อง (Device UUID):',
                     style: TextStyle(
                         fontSize: 12, color: AppColors.textSecondary),
@@ -231,7 +248,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
                     decoration: BoxDecoration(
-                      color: AppColors.background,
+                      color: isDark
+                          ? const Color(0xFF13121E)
+                          : AppColors.background,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(
@@ -239,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Expanded(
                           child: Text(
                             deviceId,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
                               color: AppColors.textPrimary,
@@ -247,7 +266,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.copy_rounded,
+                          icon: Icon(Icons.copy_rounded,
                               size: 18, color: AppColors.purpleDeep),
                           tooltip: 'คัดลอกรหัส',
                           onPressed: () {
@@ -260,7 +279,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     'รหัสนี้ใช้ระบุตัวตนในห้องเพื่อป้องกันคำสั่งเล่นวิดีโอซ้ำซ้อน และใช้จัดการสถานะออนไลน์ของคุณ',
                     style: TextStyle(
                         fontSize: 11, color: AppColors.textMuted, height: 1.4),
@@ -270,7 +289,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               actions: [
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.darkNav,
+                    backgroundColor:
+                        isDark ? AppColors.purpleDeep : AppColors.darkNav,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),
@@ -286,6 +306,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// System Architecture and Update Status Modal
   void _showSystemInfoModal() {
     showDialog(
       context: context,
@@ -298,8 +319,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             constraints: const BoxConstraints(maxWidth: 440),
             child: StatefulBuilder(
               builder: (context, setModalState) {
+                final isDark = AppColors.isDark;
+
                 return AlertDialog(
-                  backgroundColor: Colors.white,
+                  backgroundColor: AppColors.cardBg,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(28),
                   ),
@@ -313,14 +336,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: AppColors.purplePastel.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.info_outline_rounded,
                           color: AppColors.purpleDeep,
                           size: 22,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -353,14 +376,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFEDE7F6), Color(0xFFF3E5F5)],
+                            gradient: LinearGradient(
+                              colors: isDark
+                                  ? [
+                                      const Color(0xFF261E3D),
+                                      const Color(0xFF1B152E)
+                                    ]
+                                  : [
+                                      const Color(0xFFEDE7F6),
+                                      const Color(0xFFF3E5F5)
+                                    ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
                             borderRadius: BorderRadius.circular(18),
                             border: Border.all(
-                              color: AppColors.purplePastel.withValues(alpha: 0.6),
+                              color: isDark
+                                  ? const Color(0xFF3E3162)
+                                  : AppColors.purplePastel.withValues(alpha: 0.6),
                             ),
                           ),
                           child: Column(
@@ -368,10 +401,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             children: [
                               Row(
                                 children: [
-                                  const Icon(Icons.verified_rounded,
+                                  Icon(Icons.verified_rounded,
                                       size: 16, color: AppColors.purpleDeep),
                                   const SizedBox(width: 6),
-                                  const Text(
+                                  Text(
                                     'เวอร์ชันปัจจุบัน:',
                                     style: TextStyle(
                                       fontSize: 12,
@@ -384,7 +417,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 10, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: AppColors.darkNav,
+                                      color: isDark
+                                          ? AppColors.purpleDeep
+                                          : AppColors.darkNav,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: const Text(
@@ -399,11 +434,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ],
                               ),
                               const SizedBox(height: 8),
-                              const Row(
+                              Row(
                                 children: [
                                   Icon(Icons.code_rounded,
                                       size: 14, color: AppColors.textSecondary),
-                                  SizedBox(width: 6),
+                                  const SizedBox(width: 6),
                                   Expanded(
                                     child: Text(
                                       'GitHub: ZXD44/U-Sync',
@@ -424,10 +459,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 14),
 
                         // System Architecture Details
-                        _buildInfoRow('ระบบซิงค์เวลา', 'Firebase Realtime (Offset Sync)'),
-                        _buildInfoRow('เครื่องเล่น', 'YouTube CDN Player (60fps)'),
-                        _buildInfoRow('การพักหน้าจอ', 'Wakelock Plus (เปิดทำงาน)'),
-                        _buildInfoRow('ระบบกู้คืนหัวห้อง', 'Auto Host Migration (Active)'),
+                        _buildInfoRow(
+                            'ระบบซิงค์เวลา', 'Firebase Realtime (Offset Sync)'),
+                        _buildInfoRow(
+                            'เครื่องเล่น', 'YouTube CDN Player (60fps)'),
+                        _buildInfoRow(
+                            'การพักหน้าจอ', 'Wakelock Plus (เปิดทำงาน)'),
+                        _buildInfoRow(
+                            'ระบบกู้คืนหัวห้อง', 'Auto Host Migration (Active)'),
 
                         const SizedBox(height: 8),
 
@@ -436,7 +475,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           builder: (context, setSoundState) {
                             return SwitchListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: const Text(
+                              title: Text(
                                 'เสียงเตือนแชท & Reaction',
                                 style: TextStyle(
                                   fontSize: 12,
@@ -444,7 +483,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   color: AppColors.textPrimary,
                                 ),
                               ),
-                              subtitle: const Text(
+                              subtitle: Text(
                                 'มีเสียงเมื่อเพื่อนส่งข้อความหรือส่งสติกเกอร์',
                                 style: TextStyle(
                                   fontSize: 10,
@@ -452,7 +491,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ),
                               ),
                               value: FavoritesService.soundEnabled,
-                              activeThumbColor: AppColors.purpleDeep,
+                              activeTrackColor: AppColors.purpleDeep,
                               onChanged: (val) {
                                 setSoundState(() {
                                   FavoritesService.setSoundEnabled(val);
@@ -464,10 +503,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                         const SizedBox(height: 14),
 
-                        // GitHub Check Update Action Button inside Modal
+                        // GitHub Check Update Action Button
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.darkNav,
+                            backgroundColor: isDark
+                                ? AppColors.purpleDeep
+                                : AppColors.darkNav,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -480,12 +521,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               : () async {
                                   setModalState(() {
                                     isCheckingInModal = true;
-                                    updateStatusMessage = 'กำลังเชื่อมต่อ GitHub API...';
+                                    updateStatusMessage =
+                                        'กำลังเชื่อมต่อ GitHub API...';
                                   });
                                   HapticFeedback.lightImpact();
 
-                                  final release = await UpdateService.checkForUpdate();
-                                  
+                                  final release =
+                                      await UpdateService.checkForUpdate();
+
                                   if (ctx.mounted) {
                                     setModalState(() {
                                       isCheckingInModal = false;
@@ -521,11 +564,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           label: Text(
                             isCheckingInModal
                                 ? 'กำลังตรวจสอบ...'
-                                : 'ตรวจสอบอัปเดตจาก GitHub',
+                                : 'ตรวจสอบเวอร์ชันบน GitHub',
                             style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
+                                fontSize: 13, fontWeight: FontWeight.bold),
                           ),
                         ),
 
@@ -533,7 +574,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           const SizedBox(height: 8),
                           Text(
                             updateStatusMessage,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                               color: AppColors.purpleDeep,
@@ -547,7 +588,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text(
+                      child: Text(
                         'ปิดหน้าต่าง',
                         style: TextStyle(
                           color: AppColors.textSecondary,
@@ -573,7 +614,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         children: [
           Text(
             '$label: ',
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary),
@@ -581,7 +622,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12, color: AppColors.textSecondary),
             ),
           ),
@@ -597,11 +638,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final totalVideos = StatsService.totalVideos;
     final totalRooms = StatsService.totalRooms;
     final totalReactions = StatsService.totalReactions;
+    final isDark = AppColors.isDark;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'โปรไฟล์และการตั้งค่า',
           style: TextStyle(
             color: AppColors.textPrimary,
@@ -620,11 +662,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.cardBg,
                 borderRadius: BorderRadius.circular(26),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+                  width: 1.0,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
+                    color: Colors.black.withValues(
+                        alpha: isDark ? 0.25 : 0.03),
                     blurRadius: 14,
                     offset: const Offset(0, 4),
                   ),
@@ -647,14 +694,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Text(
                           nickname,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                             color: AppColors.textPrimary,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        const Text(
+                        Text(
                           'โปรไฟล์สมาชิก U-Sync',
                           style: TextStyle(
                             fontSize: 12,
@@ -678,26 +725,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(
                         vertical: 12, horizontal: 10),
                     decoration: BoxDecoration(
-                      color: AppColors.greenPastel,
+                      color: isDark ? const Color(0xFF12281C) : AppColors.greenPastel,
                       borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF1C452F) : Colors.transparent,
+                        width: 1.0,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'ดูคลิปรวม',
                           style: TextStyle(
                               fontSize: 10,
-                              color: Color(0xFF2D6A4F),
+                              color: AppColors.greenDeep,
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '$totalVideos คลิป',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF1B4332)),
+                              color: AppColors.textPrimary),
                         ),
                       ],
                     ),
@@ -709,26 +760,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(
                         vertical: 12, horizontal: 10),
                     decoration: BoxDecoration(
-                      color: AppColors.bluePastel,
+                      color: isDark ? const Color(0xFF132035) : AppColors.bluePastel,
                       borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF1B365D) : Colors.transparent,
+                        width: 1.0,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'ห้องที่เข้า',
                           style: TextStyle(
                               fontSize: 10,
-                              color: Color(0xFF1D3557),
+                              color: AppColors.blueDeep,
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '$totalRooms ห้อง',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF1D3557)),
+                              color: AppColors.textPrimary),
                         ),
                       ],
                     ),
@@ -740,26 +795,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(
                         vertical: 12, horizontal: 10),
                     decoration: BoxDecoration(
-                      color: AppColors.orangePastel,
+                      color: isDark ? const Color(0xFF281C10) : AppColors.orangePastel,
                       borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF4A311A) : Colors.transparent,
+                        width: 1.0,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Reactions',
                           style: TextStyle(
                               fontSize: 10,
-                              color: Color(0xFF7F4F24),
+                              color: AppColors.orangeDeep,
                               fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '$totalReactions ครั้ง',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF7F4F24)),
+                              color: AppColors.textPrimary),
                         ),
                       ],
                     ),
@@ -770,14 +829,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 18),
 
-            // Simplified & Compact Settings Section (3 essential tiles only!)
+            // Settings Section
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppColors.cardBg,
                 borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+                  width: 1.0,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
+                    color: Colors.black.withValues(
+                        alpha: isDark ? 0.25 : 0.03),
                     blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
@@ -785,28 +849,89 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               child: Column(
                 children: [
+                  // 1. Dark Mode Toggle Tile
+                  ListTile(
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.purplePastel.withValues(alpha: 0.6)
+                            : AppColors.orangePastel.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isDark
+                            ? Icons.dark_mode_rounded
+                            : Icons.light_mode_rounded,
+                        color: isDark
+                            ? AppColors.purpleDeep
+                            : AppColors.orangeDeep,
+                        size: 20,
+                      ),
+                    ),
+                    title: Text(
+                      'โหมดกลางคืน',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      isDark
+                          ? 'เปิดใช้งานอยู่ • โทนสีมืด Deep Slate'
+                          : 'ปิดอยู่ • โทนสีสว่าง Neo-Pastel',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    trailing: Switch.adaptive(
+                      value: ThemeService.isDarkMode,
+                      activeTrackColor: AppColors.purpleDeep,
+                      onChanged: (val) {
+                        HapticFeedback.selectionClick();
+                        ThemeService.setDarkMode(val);
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                  Divider(
+                      height: 1,
+                      indent: 60,
+                      endIndent: 20,
+                      color: AppColors.divider),
+
+                  // 2. Profile Edit
                   _buildSettingTile(
                     icon: Icons.badge_outlined,
                     title: 'แก้ไขข้อมูลโปรไฟล์',
                     subtitle: 'ชื่อเล่น: $nickname • อวตาร: $avatarEmoji',
                     onTap: _showEditProfileModal,
                   ),
-                  const Divider(
+                  Divider(
                       height: 1,
                       indent: 60,
                       endIndent: 20,
-                      color: Color(0xFFF0EDF6)),
+                      color: AppColors.divider),
+
+                  // 3. Device Info
                   _buildSettingTile(
                     icon: Icons.fingerprint_rounded,
                     title: 'ข้อมูลอุปกรณ์ & รหัสเครื่อง',
                     subtitle: 'แตะเพื่อดูรายละเอียดและคัดลอกรหัส',
                     onTap: _showDeviceInfoModal,
                   ),
-                  const Divider(
+                  Divider(
                       height: 1,
                       indent: 60,
                       endIndent: 20,
-                      color: Color(0xFFF0EDF6)),
+                      color: AppColors.divider),
+
+                  // 4. System Info & GitHub Update
                   _buildSettingTile(
                     icon: Icons.hub_outlined,
                     title: 'ข้อมูลระบบ & อัปเดตเวอร์ชัน',
@@ -819,14 +944,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 30),
 
-            // Creator Credit: Clean Thai text without Heart
+            // Creator Credit
             Container(
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 18),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.7),
+                color: AppColors.cardBg.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+                  width: 1.0,
+                ),
               ),
-              child: const Text(
+              child: Text(
                 'พัฒนาโดย ZirconX',
                 style: TextStyle(
                   fontSize: 11,
@@ -850,20 +979,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
+    final isDark = AppColors.isDark;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       leading: Container(
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: AppColors.background,
+          color: isDark ? const Color(0xFF13121E) : AppColors.background,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: AppColors.textPrimary, size: 20),
       ),
       title: Text(
         title,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.bold,
           color: AppColors.textPrimary,
@@ -871,13 +1002,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       subtitle: Text(
         subtitle,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 12,
           color: AppColors.textSecondary,
         ),
       ),
       trailing:
-          const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+          Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
       onTap: onTap,
     );
   }

@@ -16,6 +16,7 @@ import '../services/device_service.dart';
 import '../services/stats_service.dart';
 import '../services/favorites_service.dart';
 import '../services/pip_service.dart';
+import '../services/theme_service.dart';
 import '../widgets/floating_reactions.dart';
 import '../widgets/youtube_search_modal.dart';
 import '../widgets/room_invite_modal.dart';
@@ -25,6 +26,7 @@ class WatchPartyScreen extends StatefulWidget {
   final String roomName;
   final bool initialLocked;
   final String password;
+  final String initialVideoId;
 
   const WatchPartyScreen({
     super.key,
@@ -32,13 +34,15 @@ class WatchPartyScreen extends StatefulWidget {
     this.roomName = '',
     this.initialLocked = false,
     this.password = '',
+    this.initialVideoId = '',
   });
 
   @override
   State<WatchPartyScreen> createState() => _WatchPartyScreenState();
 }
 
-class _WatchPartyScreenState extends State<WatchPartyScreen> {
+class _WatchPartyScreenState extends State<WatchPartyScreen>
+    with WidgetsBindingObserver {
   late FirebaseSyncService _syncService;
 
   YoutubePlayerController? _playerController;
@@ -47,9 +51,17 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
 
   // Synchronization flags
   bool _isApplyingRemoteUpdate = false;
+  bool _isScreenLockedOrInBackground = false;
+  bool _isDisposing = false;
   Timer? _debounceTimer;
   Timer? _watchStatsTimer; // Real watch time ticker
   Timer? _viewerSyncGuardTimer; // Periodic auto-sync guard for non-host viewers
+
+  StreamSubscription? _screenStateSub;
+  StreamSubscription? _screenMembersSub;
+  StreamSubscription? _screenReactionSub;
+  StreamSubscription? _screenMessagesSub;
+  StreamSubscription? _screenQueueSub;
 
   // UI state
   Map<String, MemberPresence> _members = {};
@@ -73,6 +85,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WakelockPlus.enable();
     PipService.setPartyActive(true);
 
@@ -84,6 +97,28 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
 
     // Record room joined in real stats
     StatsService.incrementRooms();
+    ThemeService.isDarkModeNotifier.addListener(_onThemeChanged);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _isScreenLockedOrInBackground = true;
+    } else if (state == AppLifecycleState.resumed) {
+      _isScreenLockedOrInBackground = false;
+      // Screen unlocked or returned to app -> immediately sync to server wall clock time
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted && !_isDisposing) {
+          _forceResync();
+        }
+      });
+    }
+  }
+
+  void _onThemeChanged() {
+    if (mounted) setState(() {});
   }
 
   void _startWatchStatsTracker() {
@@ -102,7 +137,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
   void _startViewerSyncGuard() {
     _viewerSyncGuardTimer?.cancel();
     _viewerSyncGuardTimer =
-        Timer.periodic(const Duration(seconds: 2), (timer) {
+        Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!_isHost &&
           _playerController != null &&
           _isPlayerReady &&
@@ -122,13 +157,13 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
             playerVal.position.inMilliseconds / 1000.0;
         final drift = (targetTime - localTime).abs();
 
-        // If drifted more than 1.5s, smoothly seek to host time
-        if (drift > 1.5) {
+        // Tight sync: if drifted more than 0.4s, seek to host time immediately
+        if (drift > 0.4) {
           _isApplyingRemoteUpdate = true;
           _playerController!.seekTo(
             Duration(milliseconds: (targetTime * 1000).toInt()),
           );
-          Future.delayed(const Duration(milliseconds: 500), () {
+          Future.delayed(const Duration(milliseconds: 300), () {
             _isApplyingRemoteUpdate = false;
           });
         }
@@ -147,15 +182,8 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
   }
 
   void _initSync() async {
-    await _syncService.joinRoom(
-      widget.roomId,
-      roomName: widget.roomName.isNotEmpty ? widget.roomName : widget.roomId,
-      isLocked: widget.initialLocked,
-      password: widget.password,
-    );
-
     // 1. Listen to Room State from Firebase
-    _syncService.stateStream.listen((remoteState) {
+    _screenStateSub = _syncService.stateStream.listen((remoteState) {
       if (mounted) {
         setState(() {
           _latestRoomState = remoteState;
@@ -165,20 +193,8 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
       _handleRemoteState(remoteState);
     });
 
-    // Immediate initial sync for new members joining an active room
-    final initialState = await _syncService.fetchLatestState();
-    if (initialState != null && initialState.videoId.isNotEmpty) {
-      if (mounted) {
-        setState(() {
-          _latestRoomState = initialState;
-          _isHost = initialState.hostId == _syncService.myDeviceId;
-        });
-      }
-      _handleRemoteState(initialState);
-    }
-
     // 2. Listen to Member Presence
-    _syncService.membersStream.listen((members) {
+    _screenMembersSub = _syncService.membersStream.listen((members) {
       if (mounted) {
         setState(() {
           _members = members;
@@ -187,7 +203,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     });
 
     // 3. Listen to Reactions
-    _syncService.reactionStream.listen((reaction) {
+    _screenReactionSub = _syncService.reactionStream.listen((reaction) {
       if (reaction.emoji.isNotEmpty) {
         _localReactionStreamController.add(reaction.emoji);
         if (FavoritesService.soundEnabled) {
@@ -197,7 +213,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     });
 
     // 4. Listen to Realtime Chat Messages
-    _syncService.messagesStream.listen((messages) {
+    _screenMessagesSub = _syncService.messagesStream.listen((messages) {
       if (mounted) {
         setState(() {
           _chatMessages = messages;
@@ -210,13 +226,32 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     });
 
     // 5. Listen to Video Playlist Queue
-    _syncService.queueStream.listen((queue) {
+    _screenQueueSub = _syncService.queueStream.listen((queue) {
       if (mounted) {
         setState(() {
           _videoQueue = queue;
         });
       }
     });
+
+    // Join room & apply initial state directly without redundant network roundtrips
+    final initialState = await _syncService.joinRoom(
+      widget.roomId,
+      roomName: widget.roomName.isNotEmpty ? widget.roomName : widget.roomId,
+      isLocked: widget.initialLocked,
+      password: widget.password,
+      initialVideoId: widget.initialVideoId,
+    );
+
+    if (initialState != null && initialState.videoId.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _latestRoomState = initialState;
+          _isHost = initialState.hostId == _syncService.myDeviceId;
+        });
+      }
+      _handleRemoteState(initialState);
+    }
   }
 
   void _scrollChatToBottom() {
@@ -288,7 +323,9 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
   void _onPlayerStateChanged() {
     if (_playerController == null || !_isPlayerReady) return;
 
-    if (_isApplyingRemoteUpdate) return;
+    if (_isApplyingRemoteUpdate || _isDisposing || _isScreenLockedOrInBackground) {
+      return;
+    }
 
     final playerValue = _playerController!.value;
 
@@ -337,16 +374,29 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
       status = 'BUFFERING';
     }
 
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      final double currentTime = playerValue.position.inMilliseconds / 1000.0;
+    final double currentTime = playerValue.position.inMilliseconds / 1000.0;
+
+    // Zero-delay for play/pause state transitions: send immediately
+    if (status != 'BUFFERING') {
+      _debounceTimer?.cancel();
       _syncService.updateState(
         videoId: _currentVideoId,
         status: status,
         currentTime: currentTime,
         playbackRate: _currentPlaybackRate,
       );
-    });
+    } else {
+      // Debounce buffering states to prevent high-frequency spamming
+      _debounceTimer?.cancel();
+      _debounceTimer = Timer(const Duration(milliseconds: 250), () {
+        _syncService.updateState(
+          videoId: _currentVideoId,
+          status: status,
+          currentTime: currentTime,
+          playbackRate: _currentPlaybackRate,
+        );
+      });
+    }
   }
 
   /// Auto-play Next Video from Queue
@@ -411,7 +461,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
           _playerController!.value.position.inMilliseconds / 1000.0;
       final double drift = (targetTime - localTime).abs();
 
-      if (drift > 1.0) {
+      if (drift > 0.35) {
         _playerController!.seekTo(
           Duration(milliseconds: (targetTime * 1000).toInt()),
         );
@@ -475,7 +525,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     );
   }
 
-  /// Host Room Lock Settings (Strictly accessible to the host only)
+  /// Host Room Lock Settings
   void _showRoomLockSettings() {
     if (!_isHost) {
       Fluttertoast.showToast(
@@ -493,20 +543,22 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     showDialog(
       context: context,
       builder: (ctx) {
+        final isDark = AppColors.isDark;
+
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: StatefulBuilder(
               builder: (context, setModalState) {
                 return AlertDialog(
-                  backgroundColor: Colors.white,
+                  backgroundColor: AppColors.cardBg,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(24)),
-                  title: const Row(
+                  title: Row(
                     children: [
                       Icon(Icons.lock_outline_rounded,
                           color: AppColors.orangeDeep),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Text('ตั้งค่าล็อคห้องส่วนตัว',
                           style: TextStyle(
                               color: AppColors.textPrimary,
@@ -519,11 +571,11 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                     children: [
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('ล็อคห้อง (ต้องใช้รหัสผ่าน)',
+                        title: Text('ล็อคห้อง (ต้องใช้รหัสผ่าน)',
                             style: TextStyle(
                                 color: AppColors.textPrimary, fontSize: 14)),
                         value: currentLock,
-                        activeThumbColor: AppColors.darkNav,
+                        activeThumbColor: isDark ? AppColors.purpleDeep : AppColors.darkNav,
                         onChanged: (val) {
                           setModalState(() {
                             currentLock = val;
@@ -534,13 +586,14 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         const SizedBox(height: 10),
                         TextField(
                           controller: pwdController,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: AppColors.textPrimary, fontSize: 14),
                           decoration: InputDecoration(
                             hintText: 'ตั้งรหัสผ่านห้อง (เช่น 1234)',
+                            hintStyle: TextStyle(color: AppColors.textMuted),
                             filled: true,
-                            fillColor: AppColors.background,
-                            prefixIcon: const Icon(Icons.key_rounded,
+                            fillColor: isDark ? const Color(0xFF13121E) : AppColors.background,
+                            prefixIcon: Icon(Icons.key_rounded,
                                 color: AppColors.orangeDeep),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(16),
@@ -554,12 +607,12 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('ยกเลิก',
+                      child: Text('ยกเลิก',
                           style: TextStyle(color: AppColors.textSecondary)),
                     ),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.darkNav,
+                        backgroundColor: isDark ? AppColors.purpleDeep : AppColors.darkNav,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -698,11 +751,19 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
 
   @override
   void dispose() {
+    _isDisposing = true;
+    WidgetsBinding.instance.removeObserver(this);
+    ThemeService.isDarkModeNotifier.removeListener(_onThemeChanged);
     WakelockPlus.disable();
     PipService.setPartyActive(false);
     _watchStatsTimer?.cancel();
     _viewerSyncGuardTimer?.cancel();
     _debounceTimer?.cancel();
+    _screenStateSub?.cancel();
+    _screenMembersSub?.cancel();
+    _screenReactionSub?.cancel();
+    _screenMessagesSub?.cancel();
+    _screenQueueSub?.cancel();
     _playerController?.removeListener(_onPlayerStateChanged);
     _playerController?.dispose();
     _syncService.dispose();
@@ -720,7 +781,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
           controller: _playerController!,
           showVideoProgressIndicator: true,
           progressIndicatorColor: AppColors.purpleDeep,
-          progressColors: const ProgressBarColors(
+          progressColors: ProgressBarColors(
             playedColor: AppColors.purpleDeep,
             handleColor: AppColors.orangeDeep,
           ),
@@ -761,21 +822,22 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
 
   Widget _buildScaffold(Widget? player) {
     final int onlineCount = _members.values.where((m) => m.isOnline).length;
+    final isDark = AppColors.isDark;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.cardBg,
         elevation: 0,
         leading: IconButton(
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: AppColors.background,
+              color: isDark ? const Color(0xFF13121E) : AppColors.background,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded,
+            child: Icon(Icons.arrow_back_ios_new_rounded,
                 color: AppColors.textPrimary, size: 14),
           ),
           onPressed: () => Navigator.pop(context),
@@ -786,7 +848,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
           children: [
             Text(
               widget.roomName.isNotEmpty ? widget.roomName : widget.roomId,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
@@ -806,7 +868,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                 const SizedBox(width: 4),
                 Text(
                   'ID: ${widget.roomId} • $onlineCount คน',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     color: AppColors.textSecondary,
                     fontWeight: FontWeight.w500,
@@ -817,21 +879,21 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
           ],
         ),
         actions: [
-          // ⚙️ Unified Clean 3-Dots Menu (No Duplications)
+          // Unified Clean 3-Dots Menu
           PopupMenuButton<String>(
             icon: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: isDark ? const Color(0xFF13121E) : AppColors.background,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.more_vert_rounded,
+              child: Icon(Icons.more_vert_rounded,
                   color: AppColors.textPrimary, size: 20),
             ),
             tooltip: 'เมนูห้อง',
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            color: Colors.white,
+            color: AppColors.cardBg,
             elevation: 8,
             onSelected: (val) async {
               if (val == 'share') {
@@ -851,13 +913,13 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
             },
             itemBuilder: (context) => [
               // 1. QR Code & Share Link
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'share',
                 child: Row(
                   children: [
                     Icon(Icons.qr_code_2_rounded,
                         color: AppColors.purpleDeep, size: 20),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Text(
                       'QR Code & ชวนเพื่อน',
                       style: TextStyle(
@@ -870,13 +932,13 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                 ),
               ),
               // 2. Picture-in-Picture Mini Player
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'pip',
                 child: Row(
                   children: [
                     Icon(Icons.picture_in_picture_alt_rounded,
                         color: AppColors.blueDeep, size: 20),
-                    SizedBox(width: 12),
+                    const SizedBox(width: 12),
                     Text(
                       'เล่นแบบหน้าต่างลอย (PiP)',
                       style: TextStyle(
@@ -901,7 +963,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                     const SizedBox(width: 12),
                     Text(
                       _isFavorite ? 'อยู่ในห้องโปรดแล้ว ⭐' : 'บันทึกเป็นห้องโปรด',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
@@ -928,7 +990,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         _latestRoomState?.isLocked == true
                             ? 'ตั้งค่ารหัสผ่าน (ล็อคอยู่)'
                             : 'ล็อคห้องส่วนตัว',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary,
@@ -949,10 +1011,9 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
             bottom: true,
             child: Column(
               children: [
-                // 1. YouTube Player Hero Card
+                // 1. YouTube Player Container
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(22),
                     child: AspectRatio(
@@ -961,22 +1022,20 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         color: Colors.black,
                         child: player != null
                             ? Stack(
+                                fit: StackFit.expand,
                                 children: [
-                                  // Player
-                                  AbsorbPointer(
-                                    absorbing: !_isHost,
-                                    child: player,
-                                  ),
-                                  // YouTube Embed / Restriction Error Overlay
+                                  player,
+                                  // Player Error Overlay (Restricted Video)
                                   if (_hasPlayerError)
                                     Positioned.fill(
                                       child: Container(
-                                        color: Colors.black.withValues(alpha: 0.88),
+                                        color: Colors.black87,
                                         padding: const EdgeInsets.all(16),
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
-                                            const Icon(
+                                            Icon(
                                               Icons.warning_amber_rounded,
                                               color: AppColors.orangeDeep,
                                               size: 38,
@@ -1095,7 +1154,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                                 child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    const Icon(
+                                    Icon(
                                       Icons.smart_display_rounded,
                                       size: 44,
                                       color: AppColors.purplePastel,
@@ -1178,7 +1237,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                           child: ElevatedButton.icon(
                             onPressed: () => _showChangeVideoDialog(),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
+                              backgroundColor: AppColors.cardBg,
                               foregroundColor: AppColors.textPrimary,
                               elevation: 0,
                               overlayColor: AppColors.purplePastel.withValues(alpha: 0.3),
@@ -1187,7 +1246,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 9),
                             ),
-                            icon: const Icon(Icons.smart_display_rounded,
+                            icon: Icon(Icons.smart_display_rounded,
                                 size: 16, color: AppColors.purpleDeep),
                             label: const Text(
                               'เปลี่ยนคลิป',
@@ -1203,7 +1262,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             onPressed: () =>
                                 _showChangeVideoDialog(isAddToQueue: true),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
+                              backgroundColor: AppColors.cardBg,
                               foregroundColor: AppColors.textPrimary,
                               elevation: 0,
                               overlayColor: AppColors.purplePastel.withValues(alpha: 0.3),
@@ -1212,7 +1271,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 9),
                             ),
-                            icon: const Icon(Icons.playlist_add_rounded,
+                            icon: Icon(Icons.playlist_add_rounded,
                                 size: 16, color: AppColors.purpleDeep),
                             label: const Text(
                               '+คิว',
@@ -1227,7 +1286,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             onPressed: () =>
                                 _showChangeVideoDialog(isAddToQueue: true),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
+                              backgroundColor: AppColors.cardBg,
                               foregroundColor: AppColors.textPrimary,
                               elevation: 0,
                               overlayColor: AppColors.purplePastel.withValues(alpha: 0.3),
@@ -1236,7 +1295,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 9),
                             ),
-                            icon: const Icon(Icons.playlist_add_rounded,
+                            icon: Icon(Icons.playlist_add_rounded,
                                 size: 16, color: AppColors.purpleDeep),
                             label: const Text(
                               '+เพิ่มคลิปเข้าคิว',
@@ -1256,10 +1315,10 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(9),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppColors.cardBg,
                             borderRadius: BorderRadius.circular(14),
                           ),
-                          child: const Icon(Icons.sync_rounded,
+                          child: Icon(Icons.sync_rounded,
                               size: 18, color: AppColors.orangeDeep),
                         ),
                       ),
@@ -1273,7 +1332,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(9),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppColors.cardBg,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(
@@ -1294,7 +1353,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                           initialValue: _currentPlaybackRate,
                           tooltip: 'ความเร็วในการเล่น (หัวห้อง)',
                           onSelected: _changePlaybackSpeed,
-                          color: Colors.white,
+                          color: AppColors.cardBg,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -1302,18 +1361,18 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: AppColors.cardBg,
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.speed_rounded,
+                                Icon(Icons.speed_rounded,
                                     size: 14, color: AppColors.purpleDeep),
                                 const SizedBox(width: 4),
                                 Text(
                                   '${_currentPlaybackRate}x',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     color: AppColors.textPrimary,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 11,
@@ -1345,18 +1404,18 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: AppColors.cardBg,
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.lock_clock_rounded,
+                              Icon(Icons.lock_clock_rounded,
                                   size: 14, color: AppColors.textMuted),
                               const SizedBox(width: 4),
                               Text(
                                 '${_currentPlaybackRate}x',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppColors.textSecondary,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 11,
@@ -1375,28 +1434,34 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                 Expanded(
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.only(
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBg,
+                      borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(24),
                         topRight: Radius.circular(24),
                       ),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+                        width: 1.0,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Color(0x08000000),
+                          color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
                           blurRadius: 16,
-                          offset: Offset(0, -4),
+                          offset: const Offset(0, -4),
                         ),
                       ],
                     ),
                     child: Column(
                       children: [
-                        // Segmented Tab Bar (Minimal iOS Pill Style)
+                        // Segmented Tab Bar
                         Container(
                           margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
                           padding: const EdgeInsets.all(3),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF3EDF7),
+                            color: isDark
+                                ? const Color(0xFF13121E)
+                                : const Color(0xFFF3EDF7),
                             borderRadius: BorderRadius.circular(16),
                           ),
                           child: Row(
@@ -1406,7 +1471,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                               _buildSegmentTab(1, Icons.queue_music_rounded,
                                   'คิวคลิป', _videoQueue.length),
                               _buildSegmentTab(2, Icons.people_alt_rounded,
-                                  'สมาชิก', _members.length),
+                                  'สมาชิก', _members.values.where((m) => m.isOnline).length),
                             ],
                           ),
                         ),
@@ -1438,6 +1503,8 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
 
   Widget _buildSegmentTab(int index, IconData icon, String label, int count) {
     final isSelected = _selectedBottomTab == index;
+    final isDark = AppColors.isDark;
+
     return Expanded(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1450,14 +1517,16 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected
+                ? (isDark ? const Color(0xFF28243A) : Colors.white)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(13),
             boxShadow: isSelected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x14000000),
+                      color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.08),
                       blurRadius: 4,
-                      offset: Offset(0, 1),
+                      offset: const Offset(0, 1),
                     ),
                   ]
                 : null,
@@ -1491,8 +1560,10 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     );
   }
 
-  /// REAL-TIME CHAT SECTION (Clean & Simple)
+  /// REAL-TIME CHAT SECTION
   Widget _buildChatSection() {
+    final isDark = AppColors.isDark;
+
     return Column(
       children: [
         // Message List
@@ -1505,15 +1576,15 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                       Container(
                         width: 44,
                         height: 44,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: AppColors.purplePastel,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.chat_bubble_outline_rounded,
+                        child: Icon(Icons.chat_bubble_outline_rounded,
                             size: 22, color: AppColors.purpleDeep),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'ยังไม่มีข้อความแชท',
                         style: TextStyle(
                           color: AppColors.textPrimary,
@@ -1522,7 +1593,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'พิมพ์ทักทายเพื่อพูดคุยในห้อง',
                         style: TextStyle(
                           color: AppColors.textSecondary,
@@ -1557,7 +1628,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                                 msg.senderName.isNotEmpty
                                     ? msg.senderName[0].toUpperCase()
                                     : '?',
-                                style: const TextStyle(
+                                style: TextStyle(
                                     color: AppColors.purpleDeep,
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold),
@@ -1577,7 +1648,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                                         left: 3, bottom: 2),
                                     child: Text(
                                       msg.senderName,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         color: AppColors.textSecondary,
                                         fontSize: 10,
                                         fontWeight: FontWeight.w600,
@@ -1590,12 +1661,14 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                                   decoration: BoxDecoration(
                                     color: isMe
                                         ? AppColors.purplePastel
-                                        : AppColors.background,
+                                        : (isDark
+                                            ? const Color(0xFF13121E)
+                                            : AppColors.background),
                                     borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: Text(
                                     msg.text,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppColors.textPrimary,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w500,
@@ -1609,7 +1682,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             const SizedBox(width: 4),
                             Text(
                               msg.formattedTime,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textMuted,
                                 fontSize: 9,
                               ),
@@ -1622,11 +1695,11 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                 ),
         ),
 
-        // Quick Reaction Bar Strip (Directly above input box)
+        // Quick Reaction Bar Strip
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: const BoxDecoration(
-            border: Border(top: BorderSide(color: Color(0xFFF4F0FA))),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: AppColors.divider)),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1653,22 +1726,22 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
         // Chat Input Box
         Container(
           padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-          color: Colors.white,
+          color: AppColors.cardBg,
           child: Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _chatInputController,
-                  style: const TextStyle(
+                  style: TextStyle(
                       color: AppColors.textPrimary, fontSize: 13),
                   decoration: InputDecoration(
                     hintText: 'พิมพ์ข้อความคุยกัน...',
-                    hintStyle: const TextStyle(
+                    hintStyle: TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 12,
                     ),
                     filled: true,
-                    fillColor: AppColors.background,
+                    fillColor: isDark ? const Color(0xFF13121E) : AppColors.background,
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 8),
                     border: OutlineInputBorder(
@@ -1681,8 +1754,8 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
               ),
               const SizedBox(width: 6),
               Container(
-                decoration: const BoxDecoration(
-                  color: AppColors.darkNav,
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.purpleDeep : AppColors.darkNav,
                   shape: BoxShape.circle,
                 ),
                 child: IconButton(
@@ -1702,6 +1775,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
   /// VIDEO PLAYLIST QUEUE SECTION
   Widget _buildQueueSection() {
     final myNickname = DeviceService.getNickname();
+    final isDark = AppColors.isDark;
 
     return Column(
       children: [
@@ -1711,7 +1785,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
             children: [
               Text(
                 'คิวที่จะเล่นถัดไป (${_videoQueue.length} รายการ)',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                   color: AppColors.textPrimary,
@@ -1728,13 +1802,13 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
         ),
         Expanded(
           child: _videoQueue.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.playlist_play_rounded,
                           size: 40, color: AppColors.textMuted),
-                      SizedBox(height: 6),
+                      const SizedBox(height: 6),
                       Text(
                         'ยังไม่มีคลิปในคิว',
                         style: TextStyle(
@@ -1742,7 +1816,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             fontWeight: FontWeight.bold,
                             color: AppColors.textPrimary),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         'กดปุ่ม "เพิ่มคิว" เพื่อเล่นวิดีโอต่อเนื่องอัตโนมัติ',
                         style: TextStyle(
@@ -1762,8 +1836,12 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: AppColors.background,
+                        color: isDark ? const Color(0xFF13121E) : AppColors.background,
                         borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF28243A) : Colors.transparent,
+                          width: 1.0,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -1777,7 +1855,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             child: Center(
                               child: Text(
                                 '${index + 1}',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.blueDeep,
                                   fontSize: 13,
@@ -1792,7 +1870,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                               children: [
                                 Text(
                                   item.title,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.textPrimary,
@@ -1802,7 +1880,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                                 ),
                                 Text(
                                   'เพิ่มโดย ${item.addedBy}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10,
                                     color: AppColors.textMuted,
                                   ),
@@ -1812,7 +1890,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                           ),
                           if (_isHost)
                             IconButton(
-                              icon: const Icon(Icons.play_arrow_rounded,
+                              icon: Icon(Icons.play_arrow_rounded,
                                   color: AppColors.purpleDeep, size: 20),
                               tooltip: 'เล่นตอนนี้',
                               onPressed: () {
@@ -1822,7 +1900,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                             ),
                           if (canDelete)
                             IconButton(
-                              icon: const Icon(Icons.close_rounded,
+                              icon: Icon(Icons.close_rounded,
                                   color: AppColors.textMuted, size: 18),
                               tooltip: 'ลบออกจากคิว',
                               onPressed: () {
@@ -1839,13 +1917,44 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
     );
   }
 
-  /// 👥 PARTY MEMBERS SECTION
+  /// 👥 PARTY MEMBERS SECTION (Shows only active online members, Host first, deduplicated)
   Widget _buildMembersSection() {
+    final isDark = AppColors.isDark;
+    final onlineEntries = _members.entries.where((e) => e.value.isOnline).toList();
+
+    // Sort: Host -> Owner -> Me -> Others
+    onlineEntries.sort((a, b) {
+      final aIsHost = a.key == _latestRoomState?.hostId;
+      final bIsHost = b.key == _latestRoomState?.hostId;
+      if (aIsHost && !bIsHost) return -1;
+      if (!aIsHost && bIsHost) return 1;
+
+      final aIsOwner = a.key == _latestRoomState?.ownerId;
+      final bIsOwner = b.key == _latestRoomState?.ownerId;
+      if (aIsOwner && !bIsOwner) return -1;
+      if (!aIsOwner && bIsOwner) return 1;
+
+      final aIsMe = a.key == _syncService.myDeviceId;
+      final bIsMe = b.key == _syncService.myDeviceId;
+      if (aIsMe && !bIsMe) return -1;
+      if (!aIsMe && bIsMe) return 1;
+
+      return a.value.nickname.compareTo(b.value.nickname);
+    });
+
+    if (onlineEntries.isEmpty) {
+      return Center(
+        child: Text(
+          'กำลังโหลดรายชื่อสมาชิก...',
+          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      children: _members.entries.map((entry) {
+      children: onlineEntries.map((entry) {
         final isMe = entry.key == _syncService.myDeviceId;
-        final isOnline = entry.value.isOnline;
         final isHost = entry.key == _latestRoomState?.hostId;
         final isOwner = entry.key == _latestRoomState?.ownerId;
         final displayName = isMe
@@ -1856,15 +1965,19 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: AppColors.background,
+            color: isDark ? const Color(0xFF13121E) : AppColors.background,
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? const Color(0xFF28243A) : Colors.transparent,
+              width: 1.0,
+            ),
           ),
           child: Row(
             children: [
               CircleAvatar(
                 radius: 14,
                 backgroundColor: isHost
-                    ? const Color(0xFFFFF3CD)
+                    ? (isDark ? const Color(0xFF382A10) : const Color(0xFFFFF3CD))
                     : (isMe
                         ? AppColors.purplePastel
                         : AppColors.orangePastel),
@@ -1876,7 +1989,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                           : Icons.face_rounded),
                   size: 14,
                   color: isHost
-                      ? const Color(0xFF856404)
+                      ? (isDark ? const Color(0xFFFFC67D) : const Color(0xFF856404))
                       : AppColors.textPrimary,
                 ),
               ),
@@ -1887,7 +2000,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                     Flexible(
                       child: Text(
                         displayName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -1901,15 +2014,15 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3CD),
+                          color: isDark ? const Color(0xFF382A10) : const Color(0xFFFFF3CD),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
+                        child: Text(
                           'หัวห้อง',
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF856404),
+                            color: isDark ? const Color(0xFFFFC67D) : const Color(0xFF856404),
                           ),
                         ),
                       ),
@@ -1919,15 +2032,15 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFE8F5E9),
+                          color: isDark ? const Color(0xFF14301D) : const Color(0xFFE8F5E9),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
+                        child: Text(
                           'เจ้าของห้อง',
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF2E7D32),
+                            color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF2E7D32),
                           ),
                         ),
                       ),
@@ -1941,17 +2054,13 @@ class _WatchPartyScreenState extends State<WatchPartyScreen> {
                   vertical: 3,
                 ),
                 decoration: BoxDecoration(
-                  color: isOnline
-                      ? AppColors.greenPastel
-                      : const Color(0xFFFFCCD5),
+                  color: AppColors.greenPastel,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  isOnline ? 'ออนไลน์' : 'ออฟไลน์',
+                  'ออนไลน์',
                   style: TextStyle(
-                    color: isOnline
-                        ? const Color(0xFF1B4332)
-                        : const Color(0xFFA4133C),
+                    color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF1B4332),
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
                   ),

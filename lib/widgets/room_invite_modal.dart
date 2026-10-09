@@ -43,11 +43,16 @@ class RoomInviteModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final displayName = roomName.isNotEmpty ? roomName : 'ห้อง $roomId';
+    final isDark = AppColors.isDark;
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+          width: 1.0,
+        ),
       ),
       padding: EdgeInsets.only(
         top: 16,
@@ -77,10 +82,10 @@ class RoomInviteModal extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppColors.purplePastel.withValues(alpha: 0.4),
+                  color: AppColors.purplePastel.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.qr_code_2_rounded,
                   color: AppColors.purpleDeep,
                   size: 24,
@@ -93,7 +98,7 @@ class RoomInviteModal extends StatelessWidget {
                   children: [
                     Text(
                       displayName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
@@ -101,7 +106,7 @@ class RoomInviteModal extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const Text(
+                    Text(
                       'สแกน QR Code หรือแชร์ลิงก์เพื่อเข้าห้องทันที',
                       style: TextStyle(
                         fontSize: 12,
@@ -113,8 +118,7 @@ class RoomInviteModal extends StatelessWidget {
               ),
               IconButton(
                 onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded),
-                color: AppColors.textSecondary,
+                icon: Icon(Icons.close_rounded, color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -125,11 +129,13 @@ class RoomInviteModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppColors.background,
+              color: isDark ? const Color(0xFF13121E) : AppColors.background,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: AppColors.purplePastel.withValues(alpha: 0.6),
-                width: 2,
+                color: isDark
+                    ? const Color(0xFF2B273D)
+                    : AppColors.purplePastel.withValues(alpha: 0.6),
+                width: 1.5,
               ),
             ),
             child: Column(
@@ -153,11 +159,11 @@ class RoomInviteModal extends StatelessWidget {
                     size: 180.0,
                     eyeStyle: const QrEyeStyle(
                       eyeShape: QrEyeShape.square,
-                      color: AppColors.purpleDeep,
+                      color: Color(0xFF7B4DFF),
                     ),
                     dataModuleStyle: const QrDataModuleStyle(
                       dataModuleShape: QrDataModuleShape.square,
-                      color: AppColors.textPrimary,
+                      color: Color(0xFF191824),
                     ),
                   ),
                 ),
@@ -165,7 +171,7 @@ class RoomInviteModal extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.meeting_room_rounded,
                       size: 16,
                       color: AppColors.purpleDeep,
@@ -173,7 +179,7 @@ class RoomInviteModal extends StatelessWidget {
                     const SizedBox(width: 6),
                     Text(
                       'รหัสห้อง: $roomId',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary,
@@ -192,13 +198,13 @@ class RoomInviteModal extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.lock_rounded,
+                            Icon(Icons.lock_rounded,
                                 size: 11, color: AppColors.pinkDeep),
                             if (password.isNotEmpty) ...[
                               const SizedBox(width: 3),
                               Text(
                                 'PIN: $password',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: AppColors.pinkDeep,
@@ -238,7 +244,7 @@ class RoomInviteModal extends StatelessWidget {
                   ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.purpleDeep,
-                    side: const BorderSide(
+                    side: BorderSide(
                         color: AppColors.purpleDeep, width: 1.5),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(

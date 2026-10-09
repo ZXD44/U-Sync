@@ -16,15 +16,22 @@ class FloatingPillNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final navBg = AppColors.isDark ? const Color(0xFF161421) : const Color(0xFF191824);
+    final activeItemBg = AppColors.isDark ? const Color(0xFF2A263D) : Colors.white;
+
     return Container(
       height: 62,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.darkNav,
+        color: navBg,
         borderRadius: BorderRadius.circular(36),
+        border: Border.all(
+          color: AppColors.isDark ? const Color(0xFF2E2B40) : Colors.transparent,
+          width: 1.2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.darkNav.withValues(alpha: 0.35),
+            color: Colors.black.withValues(alpha: AppColors.isDark ? 0.5 : 0.25),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -38,7 +45,7 @@ class FloatingPillNavBar extends StatelessWidget {
             icon: Icons.home_rounded,
             label: 'หน้าแรก',
             activeColor: AppColors.purpleDeep,
-            activeBg: Colors.white,
+            activeBg: activeItemBg,
           ),
           const SizedBox(width: 4),
           _buildNavItem(
@@ -46,7 +53,7 @@ class FloatingPillNavBar extends StatelessWidget {
             icon: Icons.grid_view_rounded,
             label: 'ห้องสด',
             activeColor: AppColors.blueDeep,
-            activeBg: Colors.white,
+            activeBg: activeItemBg,
             showDot: hasLiveRooms,
           ),
           const SizedBox(width: 4),
@@ -55,7 +62,7 @@ class FloatingPillNavBar extends StatelessWidget {
             icon: Icons.insights_rounded,
             label: 'สถิติ',
             activeColor: AppColors.orangeDeep,
-            activeBg: Colors.white,
+            activeBg: activeItemBg,
           ),
           const SizedBox(width: 4),
           _buildNavItem(
@@ -63,7 +70,7 @@ class FloatingPillNavBar extends StatelessWidget {
             icon: Icons.person_rounded,
             label: 'โปรไฟล์',
             activeColor: AppColors.pinkDeep,
-            activeBg: Colors.white,
+            activeBg: activeItemBg,
           ),
         ],
       ),

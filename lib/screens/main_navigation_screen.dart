@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/firebase_sync_service.dart';
+import '../services/theme_service.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'home_screen.dart';
 import 'rooms_browser_screen.dart';
 import 'stats_screen.dart';
 import 'profile_screen.dart';
-
 import '../services/update_service.dart';
 import '../widgets/update_dialog.dart';
 
@@ -24,10 +24,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final FirebaseSyncService _syncService = FirebaseSyncService();
 
   final List<Widget> _screens = [
-    const HomeScreen(),          // 1. หน้าแรกเมนูหลัก
-    const RoomsBrowserScreen(),  // 2. ห้องที่แสดงรายการอยู่ว่ามีใครสร้างออนไลน์
-    const StatsScreen(),         // 3. สถิติของเราใช้ไปแล้วยังไงสเตตัสจริงๆ
-    const ProfileScreen(),       // 4. ตั้งค่าแก้ไขรูปหรือโปรไฟล์ต่างๆ
+    const HomeScreen(),          // 1. หน้าแรก
+    const RoomsBrowserScreen(),  // 2. ห้องสด
+    const StatsScreen(),         // 3. สถิติ
+    const ProfileScreen(),       // 4. โปรไฟล์ & ตั้งค่า
   ];
 
   @override
@@ -62,34 +62,39 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Current Selected Screen
-          IndexedStack(
-            index: _selectedIndex,
-            children: _screens,
-          ),
-
-          // Floating Pill Navbar at Bottom Center
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 20,
-            child: Center(
-              child: FloatingPillNavBar(
-                selectedIndex: _selectedIndex,
-                hasLiveRooms: _hasLiveRooms,
-                onItemSelected: (index) {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                },
+    return ValueListenableBuilder<bool>(
+      valueListenable: ThemeService.isDarkModeNotifier,
+      builder: (context, isDark, _) {
+        return Scaffold(
+          body: Stack(
+            children: [
+              // Current Selected Screen
+              IndexedStack(
+                index: _selectedIndex,
+                children: _screens,
               ),
-            ),
+
+              // Floating Pill Navbar at Bottom Center
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 20,
+                child: Center(
+                  child: FloatingPillNavBar(
+                    selectedIndex: _selectedIndex,
+                    hasLiveRooms: _hasLiveRooms,
+                    onItemSelected: (index) {
+                      setState(() {
+                        _selectedIndex = index;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

@@ -63,8 +63,10 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = AppColors.isDark;
+
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.cardBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Container(
@@ -77,10 +79,10 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
             // Header
             Row(
               children: [
-                const Icon(Icons.smart_display_rounded,
+                Icon(Icons.smart_display_rounded,
                     color: AppColors.purpleDeep, size: 24),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'ค้นหาคลิป YouTube',
                   style: TextStyle(
                     color: AppColors.textPrimary,
@@ -90,7 +92,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded,
+                  icon: Icon(Icons.close_rounded,
                       color: AppColors.textMuted, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -103,23 +105,27 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: AppColors.background,
+                color: isDark ? const Color(0xFF13121E) : AppColors.background,
                 borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2B273D) : Colors.transparent,
+                  width: 1.0,
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.search_rounded,
+                  Icon(Icons.search_rounded,
                       color: AppColors.purpleDeep, size: 22),
                   const SizedBox(width: 8),
                   Expanded(
                     child: TextField(
                       controller: _searchController,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textPrimary,
                       ),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'พิมพ์ชื่อคลิป หรือวางลิงก์ YouTube...',
                         hintStyle: TextStyle(
                           fontSize: 13,
@@ -132,7 +138,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                   ),
                   if (_searchController.text.isNotEmpty)
                     IconButton(
-                      icon: const Icon(Icons.clear_rounded,
+                      icon: Icon(Icons.clear_rounded,
                           size: 16, color: AppColors.textMuted),
                       onPressed: () {
                         _searchController.clear();
@@ -141,7 +147,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                     ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.darkNav,
+                      backgroundColor: isDark ? AppColors.purpleDeep : AppColors.darkNav,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 14, vertical: 8),
                       shape: RoundedRectangleBorder(
@@ -176,12 +182,12 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
             // Search Results Body
             Expanded(
               child: _isLoading
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           CircularProgressIndicator(color: AppColors.purpleDeep),
-                          SizedBox(height: 12),
+                          const SizedBox(height: 12),
                           Text(
                             'กำลังค้นหาวิดีโอบน YouTube...',
                             style: TextStyle(
@@ -200,15 +206,15 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                               Container(
                                 width: 64,
                                 height: 64,
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   color: AppColors.purplePastel,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.youtube_searched_for_rounded,
+                                child: Icon(Icons.youtube_searched_for_rounded,
                                     size: 32, color: AppColors.purpleDeep),
                               ),
                               const SizedBox(height: 12),
-                              const Text(
+                              Text(
                                 'ค้นหาหรือวางลิงก์เพื่อเริ่มดู',
                                 style: TextStyle(
                                   fontSize: 15,
@@ -217,7 +223,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              const Text(
+                              Text(
                                 'พิมพ์ชื่อเพลง ศิลปิน หรือวาง URL ใดๆ ของ YouTube',
                                 style: TextStyle(
                                   fontSize: 12,
@@ -229,7 +235,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                           ),
                         )
                       : _results.isEmpty
-                          ? const Center(
+                          ? Center(
                               child: Text(
                                 'ไม่พบวิดีโอที่ค้นหา ลองเปลี่ยนคำค้นหาใหม่',
                                 style: TextStyle(
@@ -246,8 +252,12 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                   margin: const EdgeInsets.only(bottom: 10),
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: AppColors.background,
+                                    color: isDark ? const Color(0xFF151322) : AppColors.background,
                                     borderRadius: BorderRadius.circular(18),
+                                    border: Border.all(
+                                      color: isDark ? const Color(0xFF28243A) : Colors.transparent,
+                                      width: 1.0,
+                                    ),
                                   ),
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -267,7 +277,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                                 width: 100,
                                                 height: 62,
                                                 color: Colors.black12,
-                                                child: const Icon(
+                                                child: Icon(
                                                     Icons.movie_rounded,
                                                     color: AppColors.purpleDeep),
                                               ),
@@ -308,7 +318,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                           children: [
                                             Text(
                                               item.title,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.bold,
                                                 color: AppColors.textPrimary,
@@ -320,7 +330,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                               const SizedBox(height: 2),
                                               Text(
                                                 item.channelTitle,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 10,
                                                   color: AppColors.textSecondary,
                                                 ),
@@ -335,7 +345,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                                 ElevatedButton(
                                                   style: ElevatedButton.styleFrom(
                                                     backgroundColor:
-                                                        AppColors.darkNav,
+                                                        isDark ? AppColors.purpleDeep : AppColors.darkNav,
                                                     padding: const EdgeInsets
                                                         .symmetric(
                                                         horizontal: 10,
@@ -382,10 +392,11 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                                     foregroundColor:
                                                         AppColors.purpleDeep,
                                                     backgroundColor:
-                                                        Colors.white,
-                                                    side: const BorderSide(
-                                                        color: AppColors
-                                                            .purplePastel),
+                                                        isDark ? const Color(0xFF1F1A30) : Colors.white,
+                                                    side: BorderSide(
+                                                        color: isDark
+                                                            ? AppColors.purpleDeep.withValues(alpha: 0.5)
+                                                            : AppColors.purplePastel),
                                                     padding: const EdgeInsets
                                                         .symmetric(
                                                         horizontal: 8,
@@ -406,7 +417,7 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                                     widget.onSelectQueue(
                                                         item.videoId, item.title);
                                                   },
-                                                  child: const Row(
+                                                  child: Row(
                                                     mainAxisSize:
                                                         MainAxisSize.min,
                                                     children: [
@@ -414,8 +425,8 @@ class _YouTubeSearchModalState extends State<YouTubeSearchModal> {
                                                           size: 14,
                                                           color: AppColors
                                                               .purpleDeep),
-                                                      SizedBox(width: 2),
-                                                      Text(
+                                                      const SizedBox(width: 2),
+                                                      const Text(
                                                         '+คิว',
                                                         style: TextStyle(
                                                             fontSize: 11,
