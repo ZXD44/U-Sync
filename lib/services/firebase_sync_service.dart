@@ -580,7 +580,7 @@ class FirebaseSyncService {
     return null;
   }
 
-  /// Calculate latency-compensated target playback time (continuous timeline: never stops when PLAYING)
+  /// Calculate latency-compensated target playback time (Beacon mathematical timeline)
   double calculateCompensatedTime(RoomState state) {
     if (state.status != 'PLAYING') {
       return state.currentTime;
@@ -594,7 +594,8 @@ class FirebaseSyncService {
     final double elapsedSeconds = (now - state.timestamp) / 1000.0;
 
     if (elapsedSeconds > 0) {
-      return state.currentTime + (elapsedSeconds * state.playbackRate);
+      final double computed = state.currentTime + (elapsedSeconds * state.playbackRate);
+      return computed > 0.0 ? computed : 0.0;
     }
 
     return state.currentTime;

@@ -19,7 +19,7 @@ class AppReleaseInfo {
 }
 
 class UpdateService {
-  static const String currentVersion = '1.0.8';
+  static const String currentVersion = '1.0.9';
   static const String githubRepo = 'ZXD44/U-Sync';
   static const MethodChannel _channel = MethodChannel('com.usync.app/updater');
 

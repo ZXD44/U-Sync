@@ -144,11 +144,11 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
     });
   }
 
-  /// Auto-sync guard for non-hosts: keep viewers strictly aligned to host's time and status
+  /// Radio Beacon Auto-Sync Guard: smooth continuous sync using dynamic micro-pitch rate adjustment
   void _startViewerSyncGuard() {
     _viewerSyncGuardTimer?.cancel();
     _viewerSyncGuardTimer =
-        Timer.periodic(const Duration(seconds: 1), (timer) {
+        Timer.periodic(const Duration(milliseconds: 1000), (timer) {
       if (!_isHost &&
           _playerController != null &&
           _isPlayerReady &&
@@ -156,7 +156,6 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
           _latestRoomState!.videoId.isNotEmpty &&
           !_isApplyingRemoteUpdate) {
         final playerVal = _playerController!.value;
-        // Strict guard: Do NOT seek if player is buffering or in error state
         if (playerVal.playerState == PlayerState.buffering ||
             playerVal.hasError) {
           return;
@@ -166,10 +165,11 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
             _syncService.calculateCompensatedTime(_latestRoomState!);
         final localTime =
             playerVal.position.inMilliseconds / 1000.0;
-        final drift = (targetTime - localTime).abs();
+        final drift = targetTime - localTime;
+        final absDrift = drift.abs();
 
-        // Tight sync: if drifted more than 0.4s, seek to host time immediately
-        if (drift > 0.4) {
+        if (absDrift > 1.5) {
+          // Large desync (initial join or huge network stall): hard jump
           _isApplyingRemoteUpdate = true;
           _playerController!.seekTo(
             Duration(milliseconds: (targetTime * 1000).toInt()),
@@ -177,9 +177,26 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
           Future.delayed(const Duration(milliseconds: 300), () {
             _isApplyingRemoteUpdate = false;
           });
+        } else if (absDrift > 0.15 && playerVal.isPlaying) {
+          // Micro-drift: smooth acceleration / deceleration without audio glitch or rebuffering
+          final baseRate = _latestRoomState!.playbackRate;
+          final adjustedRate = drift > 0
+              ? (baseRate * 1.03).clamp(0.5, 2.0)
+              : (baseRate * 0.97).clamp(0.5, 2.0);
+          if ((_currentPlaybackRate - adjustedRate).abs() > 0.01) {
+            _currentPlaybackRate = adjustedRate;
+            _playerController!.setPlaybackRate(adjustedRate);
+          }
+        } else if (absDrift <= 0.15) {
+          // In sweet spot: normalize back to host playback rate smoothly
+          final hostRate = _latestRoomState!.playbackRate;
+          if ((_currentPlaybackRate - hostRate).abs() > 0.01) {
+            _currentPlaybackRate = hostRate;
+            _playerController!.setPlaybackRate(hostRate);
+          }
         }
 
-        // Force match host playback status (only when ready and not buffering)
+        // Force match host playback status
         if (_latestRoomState!.status == 'PLAYING' &&
             !playerVal.isPlaying &&
             playerVal.playerState != PlayerState.buffering) {
@@ -472,7 +489,7 @@ class _WatchPartyScreenState extends State<WatchPartyScreen>
           _playerController!.value.position.inMilliseconds / 1000.0;
       final double drift = (targetTime - localTime).abs();
 
-      if (drift > 0.35) {
+      if (drift > 1.5) {
         _playerController!.seekTo(
           Duration(milliseconds: (targetTime * 1000).toInt()),
         );
